@@ -1,0 +1,173 @@
+{
+    "controlSocket": "/tmp/rspServerSock",
+    "controlSocketGroup": "admin",
+    "IP4": {
+        ; Server UDP Socket: Outgoing RSP relay packets and incomming forwarded reports, incoming listener reports
+        ; NOTE: where an "IP4" group is found in this file, an "IP6" group can also or alternatly be set with corrisponding 
+        ; properties for IPv6 network sockets.  Bind Addresses would have to be in IPv6 format of course.
+        "Bind": "0.0.0.0",
+        "Port": 5075,
+        ; Optional DiffServ packet class tagging bits (in hex fomat) for outgoing UDP packets from this socket
+        "diffServHex": "2E"
+    },
+    ; log setting: should all new and droped listeners be logged? What minimum loging message level limit, log identity string and 
+    ; facility id should be used? All logging is handled through your operating systems syslog deamon; see appropriate documatation 
+    ; for details and acceptable level and facility values.  If log_listeners is enabled, LOG_INFO level is used for all 
+    ; listener related messages. The level setting will be drop to LOG_INFO if it is set higher when log_listeners is enabled.
+    "syslog": { 
+        "log_listeners": true,
+        "level": "LOG_ERR",
+        "identity": "rspServer",
+        "facility": "LOG_USER"
+    },
+    "reports": {
+        "timeout": 40,
+        "forwarding": {
+            "IP4": {
+                ; just a local test port. This could be an outside rspServer for collecting reports
+                ; CAUTION:  NEVER DIRECT BACK TO THIS SERVER'S RSP INETRFACE AND PORT, or endless looping will result!
+                "Host": "127.0.0.1",
+                "Port": 5000
+            }
+        }
+    },
+    "relay": {
+        "rsp": {
+            ; A unique name for this server used for an identifier when this server submits or forwards RSP reports
+            "viaIdentity": "TestRSP"
+        },
+        "shoutcast": {
+            "IP4": {
+                ; Shoutcast TCP Socket: listener connections
+                "Bind": "0.0.0.0",
+                "Port": 8000
+            },
+            "viaIdentity": "TestSC",
+            ; If a htmp request come in as "/", defaultRequest translates the request to the specified string.  This could be one of the
+            ; source names you would like to make a default stream or "/streamlist" to present a web page showing all the available streams.
+            "defaultRequest": "/streamlist",
+            "metaPeriod": 8192,
+            "sockTimeout": 120,
+            "reportPeriod": 30
+        },
+        "sources": [
+            ; A list of rsp sources we will be receiving to relay to listeners
+            {   
+                ; specify a source stream settings file to read
+                "File": "/Path/to/main_source.rsp",
+                ; or you can instead include the "rspStream" properties that would be in such a file directly here.
+                "rspStream": {
+                    "Name": "MtnChill128",
+                    "RSAPublicKey": "-----BEGIN PUBLIC KEY-----\nMIIBMjANBgkqhkiG9w0BAQEFAAOCAR8AMIIBGgKCAREA7y5MwQ51QDiXSfZAXfkx\ng1a8T3Khl0GfsZ6yuCUT2tngp8xLquS01hFMS+c2oR6mTjsaOarMEpupKchHjljc\nGwyBk+FtUc+8KpWe6+3mSBSddBYgvZzvKwmAPjQga0r4oLkTuP2qQMKo1zc6rlCv\nfcnbxMdXOUDDO6VGu67mqTkRs6NCjAb2OStoqKVTS3CpaLy+7IOEhUyQVtzoWpoM\nTmnKaa0TM6qTFz4UAOi5Al6lGFG9JbrxwnnWQVOHcsIgLxPRpsDfPRaJwD83HJ34\ni3LoQ5XNcgcXVT9CDcdfZT7z2QYBc6IHRdL/y3/zIaCMWTBmNRa7J7zSiuK8FVm3\nfSy3a3XW/f296rdm/Uvg3pcCAwEAAQ==\n-----END PUBLIC KEY-----",
+                    "IP4": {
+                        "MulticastGroup": "",
+                        "Port": 0,
+                        "ReportHost": "sc5.redmountainradio.com",
+                        "ReportPort": 5075,
+                        "ReportPeriod": 20
+                    }
+                },
+                "Bind": "0.0.0.0",
+                ; The optional metaDropDirectory setting causes metadata received from the source to be posted into json files in 
+                ; this directory where the file name is the metadata tag; i.e. Item.json.  Existing files are replaced once new 
+                ; data with the same tag comes in: new data is writen to a file with out the .json sufix.  Once the new file is 
+                ; fully writen and closed, it is renamed to include .json sufix, replacing any previous file with that name.
+                "metaDropDirectory": "/Users/ethan/Desktop/metadataFiles/",
+                ; The source name used relay listeners to request a relay copy of this stream
+                "Name": "TestStereo128",
+                "relayLimit": 15,
+                ; The preRollPace property, sets the speed at which the preRollBuffer is sent to newly connected listeners. This is an integer 
+                ; number. For RSP listeners, a value of 3 would specifies that for every current RSP stream packet sent, 3 extra packets 
+                ; from the previous two interleaver blocks will be sent as well until the previous blocks have been completely sent.
+                ; A value of zero means no previous block packet will be sent to listeners so they will just have to wait for their buffers 
+                ; to fill up at the normal stream rate befor they can start playing content. For shoutcast listeners, a value of 3 
+                ; specifies that data chuncks of an additional 3 times the chunk size (original size + 3x = 4x the original size) will
+                ; be sent to new listeners until the  preRollBuffer of size preRollKByte (specified later) has been sent to the listener.
+                ; A value of zero will default to 1 for shoutcast listeners if preRollKByte is non-zero, otherwise the preRoll would never
+                ; catch up to the current stream position.
+                "preRollPace": 2,
+                "rsp": {
+                    "reformat": {
+                        "FEC": 112,
+                        "Payload": 64,
+                        "Interleave": 16,
+                        "RS": false,
+                        "CRC": false,
+                        "PrivateKeyFile": "/Path/to/private/RSA/key/rsa.private",
+						; The line below will, if present, will cause cluster and alert metadata to be excluded from the reformated stream.
+						"meta-exclude": ["cluster", "alert"]
+                    },
+                    ; Below are relay streams from this source we are to send out all the time, with out expliced requests from the listener. 
+                    ; In this example, we are sending a staic stream to the next source in the list (to our self) for transcoding.
+                    "staticListeners": [
+                        {"Type": "IP4", "Address": "127.0.0.1", "Port": 5079 }
+                    ]
+                },
+                "shoutcast": {
+                    ; The preRollKByte property configures the shoutcast interface to quickly send the most recent 64 KiBytes of this stream 
+                    ; to newly connected listeners so they do not have to wait for their buffers to fill up at the stream send 
+                    ; rate befor playing can begin.  The "preRollPace" setting, in this source main section, specifies how quickly 
+                    ; this 64 KiBytes will be sent. 
+                    "preRollKByte": 64,
+                    ; Disconnects listeners with more than 66% under-runs.  Default is 50% if not set.
+                    "underrunLimit": 50,
+                    "public": true,
+                    "url": "mountainchill.com",
+                    "genre": "chill"
+                }
+            },{   
+                ; specify a source stream settings file to read
+                "File": "/Path/to/recode_source.rsp",
+                ; or you can instead include the "rspStream" properties that would in such a file directly here.
+                "rspStream": {
+                    "Name": "TestStereo128",
+                    "RSAPublicKey": "-----BEGIN PUBLIC KEY-----\nMIIBMjANBgkqhkiG9w0BAQEFAAOCAR8AMIIBGgKCAREA7y5MwQ51QDiXSfZAXfkx\ng1a8T3Khl0GfsZ6yuCUT2tngp8xLquS01hFMS+c2oR6mTjsaOarMEpupKchHjljc\nGwyBk+FtUc+8KpWe6+3mSBSddBYgvZzvKwmAPjQga0r4oLkTuP2qQMKo1zc6rlCv\nfcnbxMdXOUDDO6VGu67mqTkRs6NCjAb2OStoqKVTS3CpaLy+7IOEhUyQVtzoWpoM\nTmnKaa0TM6qTFz4UAOi5Al6lGFG9JbrxwnnWQVOHcsIgLxPRpsDfPRaJwD83HJ34\ni3LoQ5XNcgcXVT9CDcdfZT7z2QYBc6IHRdL/y3/zIaCMWTBmNRa7J7zSiuK8FVm3\nfSy3a3XW/f296rdm/Uvg3pcCAwEAAQ==\n-----END PUBLIC KEY-----",
+                    "IP4": {
+            		"MulticastGroup": "",
+            		"Port": 5079,
+            		"ReportHost": "localhost",
+            		"ReportPort": 5075,
+            		"ReportPeriod": 20
+                },
+                "Bind": "0.0.0.0",
+                "Name": "TestMono64",
+                "relayLimit": 10,
+                "preRollPace": 2,
+                "rsp": {
+                    "reformat": {
+                        ; 18 second latency at 64 kb/s raw stream rate * (1 send-buffer + 1.5 receiver-buffer)
+                        "FEC": 112,
+                        "Payload": 64,
+                        "Interleave": 16,
+                        "RS": false,
+                        "CRC": false,
+                        "PrivateKeyFile": "/Path/to/private/RSA/key/rsa.private",
+						; The line below will, if present, will cause cluster and alert metadata to be excluded from the reformated stream.
+						"meta-exclude": ["cluster"],
+                        "re-encode": {
+                        	"Content": {
+                                ; This content metadata is advertised by the recoded stream.  It should match your new format
+                                "Type": "audio/mp3",
+                                "SampleRate": 32000,
+                                "kBitRate": 64,
+                                "Channels": 1
+                            },
+                            ; This inserts a transcoding process between the source reception and the re-coding and relayling to listeners
+                            ; The array below contains a shell command followed by command parameters.  The command is executed with 
+                            ; Standard input coming from decoded rsp source stream and standard output going back to the rsp re-coder 
+                            ; for relaying to listeners.  In this example lame is used to conver the mp3 source stream into a mono 
+                            ; 64 kb/s stream.  The Above "Contents" setting must reflect the new stream encoding this function creates.
+                            "transcoder": [ "/usr/local/bin/lame", "-m", "m", "-b", "64", "--mp3input", "--silent", "-", "-" ]
+                        }
+                    }
+                },
+                "shoutcast": {
+                    "preRollKByte": 64,
+                    "public": true,
+                    "url": "your_website_url.com",
+                    "genre": "various"
+                }
+            }
+        ]
+    }
+}

@@ -1,0 +1,4 @@
+shell commands to generate 2176 bit public/private key pair generation in PEM format for use with RSP
+
+openssl genrsa -out rsa.private 2176
+openssl rsa -in rsa.private -out rsa.public -pubout -outform PEM

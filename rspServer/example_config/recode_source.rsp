@@ -1,0 +1,13 @@
+{
+	"rspStream": {
+		"Name": "TestStereo128",
+         	"RSAPublicKey": "-----BEGIN PUBLIC KEY-----\nMIIBMjANBgkqhkiG9w0BAQEFAAOCAR8AMIIBGgKCAREA7y5MwQ51QDiXSfZAXfkx\ng1a8T3Khl0GfsZ6yuCUT2tngp8xLquS01hFMS+c2oR6mTjsaOarMEpupKchHjljc\nGwyBk+FtUc+8KpWe6+3mSBSddBYgvZzvKwmAPjQga0r4oLkTuP2qQMKo1zc6rlCv\nfcnbxMdXOUDDO6VGu67mqTkRs6NCjAb2OStoqKVTS3CpaLy+7IOEhUyQVtzoWpoM\nTmnKaa0TM6qTFz4UAOi5Al6lGFG9JbrxwnnWQVOHcsIgLxPRpsDfPRaJwD83HJ34\ni3LoQ5XNcgcXVT9CDcdfZT7z2QYBc6IHRdL/y3/zIaCMWTBmNRa7J7zSiuK8FVm3\nfSy3a3XW/f296rdm/Uvg3pcCAwEAAQ==\n-----END PUBLIC KEY-----",
+        	"IP4": {
+            		"MulticastGroup": "",
+            		"Port": 5079,
+            		"ReportHost": "localhost",
+            		"ReportPort": 5075,
+            		"ReportPeriod": 20
+        	}
+	}
+}

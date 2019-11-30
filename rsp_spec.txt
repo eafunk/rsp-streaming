@@ -1,0 +1,680 @@
+1.0 OVERVIEW
+
+The Resilient Streaming Protocol is an Internet protocol built on top of the Unreliable Datagram protocol
+(UDP) layer for transporting a unidirectional, high reliability, multimedia data stream and a low bit rate 
+meta data stream where latency is not a concern.  The protocol is designed for one-way transmission, making 
+it well suited for multicast distribution, but it also includes receiver reporting and requesting mechanism 
+to allow for connection setup and teardown in a unicast distribution environment, and for listenership 
+tracking in both multicast and unicast networks.
+
+UDP packets are by nature unreliable.  Packet may arrive out of order, or not arrive at all.  To improve 
+the reliability of the data reception with out creating the need for a bidirectional connection 
+(such as the packet resend request mechanisms used in many UDP multimedia protocols, and by all TCP 
+protocols), rsp makes use of Forward Error Correction (FEC) and data interleaving over time.  This 
+allows the receiver to piece together and correct blocks of data with out needing to contact the sender.  
+
+The protocol uses out-of-band channels (typically a jSON text file) to communicate connection settings 
+(ports and addresses, etc).  Content format and rsp protocol specific settings such as interleaver and 
+FEC properties are discovered by listening to a the packet stream and after discovering the RSP setting, 
+listening for metadata with content information.
+
+The sender can then tailor the FEC overhead (increase in coded data rate) and interleaved 
+parameters (latency to fill an interleaver block) for the packet losses they are willing to tolerate before 
+the receiver can no longer piece together an error free block.  RSP make no assumptions about the format 
+of the data being sent; ADTS, for example, is a common framing mechanism used for AAC audio packets.  It 
+is the responsibility of out-of-band signaling method to make sure the receiver knows how to handle the 
+data transported.
+
+Because rsp is a connectionless protocol, measures need to be taken to prevent malicious transmission of 
+packets by those who might want to "hijack" the stream.  RSP allows an RSA private key encrypted 
+authentication packet to be sent to receivers which contains 8 bit check sums for all the packets about 
+to be sent from a given interleaver block.  The receivers can use a public key (again sent out-of-band, 
+typically part of the jSON file) to decrypt this packet and then verify the data checksums prior to 
+inserting a packets data into the interleaver. While an 8 bit checksum is very weak, it is highly 
+unlikely that a malicious sender could get more than one malicious packet into a block.  In this case, 
+the rsp FEC mechanism will simply correct the errors that the slipped in packet creates in the block.
+
+To further improve reliability, rsp allows redundant reception of network packets: a receiver can handle 
+receiving the same packet more than once.This allows a sender to transmit packets to listeners using 
+multiple internet connections at the same time.  The receiver will simply insert the packet it receive 
+first into the interleaver, and ignore subsequent packets addressed to the same column. Sender UDP packet 
+replication is typically performed at the senders router.  The protocol allows for handling duplicate 
+reception, but does not itself implement the replication.  It should be noted that duplicate packet 
+transmission does increase the total data rate at both the sender side, split across multiple network 
+connections, and at the receiver side who will most likely be receiving duplicate packets through the 
+same network connection.
+
+To further improve robustness at the network level, packets can optionally have packet level forward 
+error correction and/or a packet level CRC32 check sum added.
+
+1.1 INTERLEAVER
+
+Interleaving is important to the design of a protocol of this nature in order to spread chunks of loosed 
+data (packets) across time.  Forward error correction algorithms can correct up to a certain percentage 
+of bad bytes of data in a block. However, it still needs some data in the block to work with.  If there 
+is a burst of packet loss, a large part of or an entire block of data could be lost, preventing recovery 
+of the data.  If the bytes from packets are spread across time, then a sequential burst of packet loss 
+will be spread across time as a few bad bytes here and there, which the forward error correction 
+algorithm can easily correct.
+
+The rsp interleaver consists of N blocks, where each block stores bytes in 255 columns of pay-load size 
+bytes.  The row size must be a multiple of 16 bytes and less than 256. With in this structure, each 
+column contains the time-interleaved pay-load content of a network packet carrying multimedia data. 
+Rows are written in or read out to access the time-linear data.  For example, a sender would write data 
+into interleaved rows sequentially, and once a block is full, read the network payout out the columns 
+sequentially for network transmission.  The process is reversed on the receiving size.  
+
+An additional "interleaving number" is specified to allow further spreading for network pay-load across 
+ multiple blocks grouped into logical blocks. For example, if the "interleaving number" is set to 3, 
+then a sender, after filling the rows of 3 blocks, would have filled a complete logical block and could 
+then read column data out as follows: 
+
+Block Column
+0	0
+1	0
+2	0
+0	1
+1	1
+2	1
+0	2
+1	2
+2	2
+0	3
+1	3
+
+...
+
+0	254
+1	254
+2	254
+
+3	0
+4	0
+5	0
+
+...
+
+
+If the interleaving number is 1, then there is only one block per logical block:
+
+Block Column
+0	0
+0	1
+0	2
+0	3
+
+...
+
+0	254
+1	0
+1	1
+
+...
+
+It is advisable for a receiver to fill 1.5 logical blocks before starting to read data out of the rows of 
+the first full logical block to allow for network jitter of +0.5 to - 1.0 logical blocks.  The interleaver 
+is always set to roll the block numbers back over to 0 after interleaving number * 3 blocks.
+
+Be aware that this will introduce a receiver latency (delay) equal to 1.5 logical blocks, 
+depending on how far into a block the stream was when the receiver started listening.  If, for example,
+a stream is encoded at 128 kb/s, and the RSP parameters are set such that a logical block carries 
+40,448 bytes and there for 323,584 bits of stream data, then each block carries 316/128 = 2.47 
+seconds of stream data.  The receiver then could have between 3.71 and 4.94 seconds delay.  The
+transmitting end will always have a fixed one logical block delay since it can't start sending interleaver 
+data until a full block has been filled.  So in this case, there is almost 7 seconds of delay from end to
+end.
+
+The first byte in each row of interleaved data is reserved for meta data.  Metadata is transmitted as a 
+jSON formatted text stream, usually with out printability formatting such as TAB, LF and CR characters. 
+A completed jSON structure is always terminated by a NULL character.  When there is no new meta data to 
+send, NULLS are used to fill the row meta data bytes.  The receiver can then use received NULL characters 
+in the meta data stream as tokens for starting to parse a new jSON formatted data block.
+
+In implementing the reading and writing of data to and from the interleaver, for both transmitters and 
+receivers, it is advisable to pace the reading out of data from a full block to match the write in rate 
+of data to a filling block.  This allows the data to be sent and received in a steady fashion rather 
+than sending nothing for a long period of time as a block fills, followed by a burst to high rate data 
+to then send the whole block at once. Extended type packets should be ignored when measuring packet arrival 
+timing for pacing since some relay server implementations will rapidly send extended packets stream data 
+from the two logical blocks behind the current send position in order to pre-fill (or preroll) a newly 
+requested listener's receivers interleaver up to the current send position.  This can reduce the buffering   
+delay for new unicast relay requests.
+
+Interleaving numbers from 1 to 85 are supported... 85*3 = 255, which is the maximum block number allowed 
+(8 bits)
+
+1.2 FORWARD ERROR CORRECTION
+
+Reed-Solomon (RS) forward error correction encoding is always applied to all rows written into the 
+interleaved by a sender, and all rows read from the interleaver by a receiver must be decoded accordingly. 
+An encoded row is always 255 bytes long.  The number of bytes required to generate that row is selectable 
+by the sender to allow the sender to choose how much throughput to trade off for in exchange for the 
+maximum number of erroneous bytes that can be corrected. The remaining number of bytes in the 255 byte 
+row are parity bytes generated the the RS encoding process.  The RS algorithm can correct up to parity 
+bytes number of errors per row, assuming it knows which bytes in the rows are bad/missing. The RSP protocol 
+uses packet column and block addresses to note which interleaver columns have been filled and conversely 
+which are missing, so it can identify the known bad bytes in a row. If an erroneous byte works it way into 
+the interleaved with out the interleave's knowledge, the FEC can still correct the errors, only two parity 
+bytes are requires for each error byte for the correction to be successful.
+
+The RSP protocol has the option of also apply additional RS encoding to each network packet before sending. 
+If this option is enabled, then the second through nth byte each sent network packets is also RS encoded, 
+such that the number of parity bytes is equal to 255 minus the original packet size - 1 prior to encoding.
+
+1.3 CYCLIC REDUNDANCY CHECK (CRC)
+
+Some RSP packets can have a CRC32 checksum appended to the packet.  This is useful to ensure the integrity 
+of the packet if the packet is being generated on an operating system that does not support UDP packet 
+checksums.  It is better for RSP to receive no packet at all then to receive a packet with bad data, due 
+to the nature of RS. This option help ensure this is the case where the sending operating systems doesn't 
+handle this for you.
+
+CRC checksums are mandatory for authentication packets, as a mechanism to validate the encrypted data.
+
+1.4 AUTHENTICATION
+
+To provide some level of source authentication to a receiver of a RSP stream, periodic authentication 
+packets are transmitter which allow the receiver to discard packets it receives that may be coming from 
+a malicious source.  Public/private key encryption of all RSP packets can be burdensome to the receiver 
+in terms of processing resource, so instead, RSP sends one encrypted authentication packet just ahead of 
+sending data for an interleaver block.  The authentication packet contains a payload of one interleaved 
+block number and 255 8 bit check sums, that correspond to the 8 bit check sums for each column in the 
+interleaved for which the authentication packet represents.  Note that the checksum is simply the 2s 
+compliment of the 8 bit sum of all the bytes in the interleaved column. The receiver can then validate 
+unsecured/unencrypted payload received packets addressed to the interleaved block and column agains the 
+check sums that were transmitter securely.  Any packets that don't match the checksum are thrown out.  
+If packets are received prior to receiving authentication packets, then all payload packets are excepted, 
+making authentication packets both optional and causing no harm if they are lost in transmission.
+
+Authentication packets always have a CRC32 checksum calculated on the contents, including the packet 
+header. Then, all but the first header byte are RSA encrypted with a 2176 bit (272 byte) private key 
+using PKCS1 padding. This results in a 273 byte packet, at the end of which the pre-encryption 4 byte 
+CRC32 check sum is appended to create a 277 byte packet. The receiver then notes the CRC32 bytes at the 
+end of the packet, decrypts the 272 bytes after the header byte using a public key it received 
+out-of-band (again, most likely via a jSON file), and checks the unencrypted result including the packet 
+header byte again the CRC32 it received.  If the CRC32 results match, then the checksums are stored to 
+checking subsequently received packets.
+
+1.5 RECEIVER REPORT/REQUEST/REPLY MECHANISM 
+
+To facilitate both statistical data collection from all receivers (at the receivers option) and stream
+initiation and termination for relay based unicast listeners, RSP includes a mechanism for receivers to 
+send messages about themselves to a relay server, which replicates RSP packet streams to many unicast 
+listeners, or a statistics collection server, or a combination of the two.  Receiver Report/Request/Reply 
+(RR) packets carry a NULL terminated, jSON encoded string payload, usually, although not required, in 
+non-printable format (no tabs, white space and line formatting) for compactness. Packet payload size is 
+specified in 16 byte blocks, so the string payload length is always rounded up to the next 16 byte size, 
+and padded whit NULLs. 
+
+A RSP relay server can also send messages to a listener it is relaying to via this packet type.
+
+Relays servers can also be set up as "clusters," where several relays servers work together to provide a
+single stream to a listener.  In this case an RClu property is sent as part of the Report packets to each 
+of the servers in the cluster with the total number of servers the listeners believes is participating 
+in the cluster, and the Relay property specifies which number (1 through RClu) this server is to act as. 
+Relays servers will then only send only one out of RClu columns, starting with column Relay-1.  
+
+1.6 META DATA STREAM
+
+As previously mentioned in the interleaved section, the first byte of each interleaver row is reserved 
+for caring a meta data stream to go along with the media data in the stream in real time.  Meta data bytes 
+are set to NULL (zero) if there is no meta data to be sent at the time.  If there is meta data to be sent, 
+the bytes are filled with a jSON string containing the meta data, such as currently playing track 
+information, or messages to listeners.  A NULL byte is always added to the end of the jSON string so the 
+receiver knows when it has received a complete jSON formatted string and it can proceed to pares it. Note 
+that the jSON string is typically not formatted for printability (no white space or line characters) to 
+save space, however, this is not a requirement.
+
+Meta data jSON string should all be an object type containing one named object.  If this named object contains 
+a non-zero mID entry, then the named object should be added to the senders repeat list, which is used to fill 
+otherwise empty meta data space (see note below).  At a minimum, a repeating Content meta data object should 
+be in the sender list to advertise to listeners the media content being sent.  This is important for RSP streams 
+that are being sent via one-way mediums such as Digital Audio Broadcasting or via satellite. Example Format 
+and Content objects can be seen in the advertising file example, located in the Appendix.  Typically, you do 
+not need to include the RSAPublicKey property in the Format object when sent as part of the stream as it is 
+recommended that listeners ignore this property, if present, when sent as part of the stream since self 
+authentication is pointless.  Any one can claim to be authentic, when they are the ones sending the key with 
+wich to test authenticity.  
+
+Here are some jSON string examples.
+
+Content information jSON string:
+{"Content":{mID:4538,"Type": "audio/aac","SampleRate": 32000,"kBitRate": 128,"Channels": 2}}
+
+	Content: 	Metadata type label - Stream content after RSP decoding
+
+		mID: 		A required unique ID number for this meta data entry since it is to 
+				be sent more than once, so the receiver can ignore subsequent entries. 
+
+		Type:		MIME type description of the stream format; same as Content-type used for HTTP 
+				sessions. Examples: audio/aac, audio/aacp, audio/mp4, etc.
+
+		SampleRate:	Audio sample rate (samples per second).
+
+		kBitRate:	Stream bit rate (kibi bits per second).
+		
+		Channels:	Number of audio channels being  carried by this stream.
+
+New track information jSON string:
+{"item":{"mID":16435,"Name":"A Gentle Dissolve","Artist":"Thievery Corporation","Album":"The Cosmic Game","AR":{"FP":3546701,"LocID":3,"ID":54578,"ArtistID":12747,"AlbumID":8945}}}
+
+	item: 	Metadata type label - Standard Track information
+
+		mID: 		A optional unique ID number for this meta (or any) data entry if it is to 
+				be sent more than once, so the receiver can ignore subsequent entries. If mID
+				if set and non-zero, this item will be added to a repeat list.  When there is
+				the no new metadata to send, items from the repeat list are sent instead to fill
+				the metadata space. Repeat list items should be replaced with a new item when a new 
+				item of the same metadata label type but a different non-zero mID is queued to send.
+				If mID is missing or zero, then the metadata item will be queued to send just once.
+				
+		Artist:		Artist name
+
+		Album: 		Album name
+
+		Name:		Song title. 
+
+		AR: 	An example of sender specific custom information, most likely to be ignored by 
+			typical listeners, but which may be useful to others.  In this case, it's custom 
+			data of use to the AudioRack Suite radio automation system.
+
+			FP: 		Finger print number: a unique identifier for the AudioRack 
+					database the following information applies to.
+
+			LocID: 		AudioRack database location ID number.
+
+			ArtistID:	Database Artist ID number.
+
+			AlbumID:		Database Album ID number.
+
+			ID:		Song's database ID number. 
+
+			All sorts of custom and application specific data is possible.  The above is 
+			just an example.
+
+Message to listeners jSON string:
+{"message":{"mID":13455,"text":"Test message"}}
+
+Alert to listeners jSON string, will stay in the repeat list for one hour (3600 seconds)
+{"alert":{"mID":13455,"lifetime":3600,"text":"Flash Flood Warning until 9 PM in Montrose County"}}
+
+                lifetime:       The optional lifetime for mID items, in seconds, that this item will remain in the
+                                repeat list.  This number is decremented each time it is sent to indicate the time
+                                still remaining for it to be in the repeat list.  This property can be set for any 
+				metadata item with a non-zero mID.
+
+Cluster list for distributed rsp relaying across multiple servers
+{"Cluster":{"mID":28,"Timeout":120,"IP4":["ss1.redmountainradio.com:5075","205.65.122.30:5075","205.65.122.56:5075"],"IP6": ["ss1.redmountainradio.com:5075,"[2001:db8:1f70::7648:6e8]:5075","[2001:db8:1f70::7648:6ea]:5075"]}
+                
+	Timeout:	Optional time (in seconds) to to flag on a server in the lists that follows as down
+			if data is not received from it in this time. Flagged servers in the list are still
+			sent periodic receiver-reports, allowing them to "come back" and be un-flagged.  
+			However, flagged servers are not expected to be sending data while they remain
+			flagged, so the remaining servers in the group will make up for the missing data.
+			If missing or zero, servers are not removed from a players' cluster list unless a 
+			new Cluster meta data list is received.
+
+        IP4:		IPv4 Address list
+
+	IP6:		IPv6 Address list
+
+NOTE:	The stream name requested from servers in the address list will be the same stream name used for the 
+	original relay request. Make sure all the servers in a cluster are configured the relay clustered 
+	stream under the same stream names.  
+                
+NOTE: 	For a cluster of servers to work, all servers in the cluster must be relaying the same source 
+	stream without any re-formating.
+
+NOTE: 	Players that support clusters will connect to an rsp relay server as ususal.  When the player receives
+	this metadata object, It will send start requests to each of the additional servers in the list, 
+	including the origninally server it connected to which MUST be in the list too.  The new start requests
+	will include the RClu property set the cluster list entry count, and the Relay property will be set to 
+	the index of the server in the list, starting at 1.  Players that are not receiving a stream as
+	a relay (i.e. Multicast or direct feed to a port/address) will ignore clusters. 
+
+2.0 RSP PACKET STRUCTURE
+
+GENERAL FORM
+
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|ID |C R| Size  | Block (opt)   | Column (opt)  | 				Header
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|								|
+|		    Variable length Payload 			|		Data being carried
+|								|
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+| Optional CRC32  checksum of all previous bytes in the packet  |		Optional Checksum
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+NO PACKET LEVEL FEC
+
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1  
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|ID |C 0| Size  | Block (opt)   | Column (opt)  |                               Header, no packet level FEC
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+		applied
+|								|
+|		    Variable length Payload 		        |		Data being carried
+|						         	|
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|  Optional CRC32  checksum of all previous bytes in the packet |		Optional Checksum
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+WITH PACKET LEVEL FEC
+
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1		Header with packet level FEC
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+				FEC & Interleaving present in
+|ID |C 1| Size  |   FEC (opt)   |Intr-ving (opt)|				Extended payload packets only
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+		
+|								|		Data being carried, 2 (4 with
+|		    255 Bytes of RS encoded data	 	|		extended payload packets)
+|								|	        though Nth byte of original 
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+		packet encoded using RS 
+										encoding with 255 - (N - 1) 
+										parity bytes
+
+2.1 ID FIELD:
+
+0   Payload packet, 3 byte header, interleaver column data from the specified interleaver block and column.
+    This packet includes both Block and Column number bytes
+
+1   Authentication packet, 2 byte header, 255 interleaver column 8 bit checksums for the specified 
+    interleaved block, RSA private key encrypted.  This packet includes a Block number byte.
+
+2   Receiver Report/Request packet, 1 byte header, jSON formated information about a receiver.
+
+3   Extended payload packet, same as ID = 0, with two additional header bytes to describe the interleaving
+    and FEC parameters used this and subsequent packets.  Every 1 in 100 payload packets should be of this
+    type to aid listeners in format discovery.
+
+
+2.2 FLAGS:
+
+C   Packet included a CRC32 checksum appended to the end.  The checksum includes all packet bytes ahead of 
+    the checksum, with the exception of authentication packets, where the CRC is calculated for the entire 
+    contents of the packet PRIOR to RSA encryption.  
+
+	NOTE: 	Authentication packets should always have the C flag set.
+
+R   The packet is Reed-solomon Forward Error correction encoded.  All bytes, except the first byte (or first 
+    three bytes for a extended payload packet) are RS encoded to produce 255 byte result. The packet 
+    is always 256 or 258 (for extended payload packets) bytes long regardless of how much data it was 
+    carrying prior to encoding. The RS encoding process is set to fill out the extra bytes with parity codes. 
+    The Size field of the first byte specifies the number of payload bytes carried prior to encoding and 
+    after decoding, excluding header and optional CRC bytes. To decode the packet, it is required to know the 
+    number of parity bytes added by the encoding process.  This can be extracted from the size field as: 
+        Parity bytes added = 256 - (Payload-size + header size (less 2 for extended payload) + CRC size) 
+
+	NOTE: 	if both the C and R flags are set, the CRC32 check sum is added to the packet on 
+		transmission before the packet had been RS encoded.  This includes header bytes, both short and extended.
+
+	NOTE:   Receiver Report packets CAN NOT have the R flag set, due to their variable length.
+
+	NOTE: 	Authentication packets can never have the R flag set.
+
+	NOTE:   Extended payload packets can have the R flag set, in which case encoding begins after the three header bytes.
+		As mentioned above, if a CRCR is set, it includes ALL header bytes.
+
+2.3 SIZE FIELD:
+
+    Number of raw payload bytes, in 16 byte steps, less first 16 bytes, carried in the packet.  On packet 
+    transmission, this count applies to the number of bytes begin carried in the packet before any RS 
+    encoding, and not counting any CRC check sum additions and all header and interleaved address bytes, 
+    if any.  On reception, this is the number of actual data bytes you will get out of the packet after 
+    all the headers, CRC checks and RS coding have been removed.  
+
+ 	Example: 96 bytes payload, Size = (96 / 16) - 1
+
+3.0 PACKET TYPE DETAILS, all shown with out packet level FEC. 
+
+3.1 PAYLOAD PACKET
+
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|0 0|C R| Size  |     Block     |    Column     | 				Header
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|								|     
+|		Interleaver Column data  	     		|     		Data being carried, 16 to 256 
+|								|     		bytes in 16 byte steps
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|  Optional CRC32  checksum of all previous bytes in the packet |     		Optional Checksum
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+Block = 0 to 255 decimal
+Column = 0 to 254 decimal
+
+If Column = 255 decimal, then the transmitter is restarting a stream and all receivers should 
+reset/clear their interleaves.  Transmission should always start out with sending several reset 
+packets of this type.  Payload data is ignored in this case.
+
+3.2 AUTHENTICATION PACKET
+
+Sent/received over the network:
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+
+|1 0|1 0|1 1 1 1|				 				Header
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|								|     
+| 2176 bit Private key RSA Encrypted interleaver row checksums  |		Data being carried, 256 bytes  
+|							  	|		encrypted as 272 bytes
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|   checksum of all bytes in the packet prior to encryption	|      		Required Checksum, calculated  
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+		with bytes 1 to 257 of the 
+										packet prior to encryption
+
+After decryption by the receiver:
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+
+|1 0|1 0|1 1 1 1|				 				Header
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|     Block     |						|
++-+-+-+-+-+-+-+-+	255 8 bit row check sums		|		256 bytes decrypted bytes 
+| 							        |		
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|			      16 bytes			        |		Ignore
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+| checksum of all bytes up to and including 255 8 bit checksums |		Required Checksum from bytes 
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+		1 through 257
+
+
+3.3 RECEIVER REPORT/REQUEST PACKET
+
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+
+|0 1|C R| Size  |				 				Header
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|    								|
+|	jSON string, NULL terminated, NULL padded		|		Data being carried, 16 to 256  
+| 							        |		bytes in 16 byte steps
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|  Optional CRC32  checksum of all previous bytes in the packet |		Optional Checksum
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+Base receiver report/request jSON string:
+{"Client":"simpleRSPPlayer","Stream":"Test Stream","IP4":{"Addr":"192.168.0.4","Port":5075,"Mcast":"","Relay":True}}
+{"Client":"simpleRSPPlayer","Stream":"Test Stream","IP4":{"Addr":"192.168.0.4","Port":5075,"Mcast":"","Relay":3, "RClu":4}}
+
+	Client: Name of client program.
+
+	Stream: Stream reference string for servers handling multiple streams.
+
+	IP4: Internet v4 connection data
+		Addr: 	The client's address it is listening for packets on, as perceived by the 
+				client (can be a NAT address for example)
+
+		Port:		The client's port it is listening for packets on, as perceived by the client 
+				(can be a NATed port for example)
+
+		Mcast: 		Multicast group address if this client is listening via multicast
+
+		Via: 		For reports being passed from one relay server to another, this is the originating
+				relay server's address, or other identifying string set by the server.  If this property
+				is present, the Address and Port properties are assumed to be the client address and port
+				as perceived by the relay server.
+
+		Relay:		True or a Non-zero integer if this listener is a unicast listener requesting relay service from this server.
+				This property must be false, zero, or not present if the Via property exists.
+
+		RClu:		If Relay is a non-zero integer, then this optional "Relay-Cluster" proprety is used to specify how many 
+				other servers are operating with this one in a cluster, with Relay specifing which server number (1 through RClu)
+				this sserver is to be. If Relay=3 and RClu=4, than it is assumed that the client is listening to 4 servers total,
+				and this server is expected to send only the 3rd column out of every 4 columns of payload. Column counting starts 
+				with Block 0, column 0. where the column number for this purpose is payload (Block * 255) + column.  It is assumed 
+				that the other three servers have been sent a request with 1,2 and 4 Relay values.  If this property is zero or 
+				missing, then no clustering is assumed and all packets will be relayed.
+
+	IP6: Same as IP4, only Internet v6 address formats, etc.
+
+Receiver Report example jSON string:
+{"Client":"simpleRSPPlayer","Stream":"Test Stream","IP4":{"Addr":"192.168.0.4","Port":5075,"Micast":"","Relay":True},"Report":{"Fix":1,"Fail":0,"Bad":0,"Dup":49,"Bal":-1,"Stat":TRUE}}
+
+	Report: Packet reception report data, averaged over a full interleaved group.
+
+		Fix:		Integer percentage of bytes per interleaver row that the FEC corrected.
+
+		Fail:		Integer percent of interleaved rows that had more errors that the FEC could correct.
+
+		Bad:	 	Integer percent of packets received that were bad: failed CRC, authenticated check 
+				sum, or where not formatted correctly.
+
+		Dup:		Integer percent of packets received that were duplicates, or -100 for break in stream reception.
+
+		Bal:		Integer percent, ralative to one logical block, indicating the fill-play position difference 
+				from ideal 1.5 logical blocks behind the write position. Negative therefore indicates filling 
+				is running behind the ideal position.
+
+		Stat:		True if the player is currently playing and is not buffering, waiting, syncing, etc.
+
+Receiver Start Request packet example jSON string:
+{"Client":"simpleRSPPlayer","Stream":"Test Stream","start":true,"IP4":{"Addr":"192.168.0.4","Port":5075,"Mcast":"","Relay":True}}
+
+	start: 	true/false - set to true if this is a start streaming request to a relay server.
+
+Receiver Stop request packet example jSON string:
+{"Client":"simpleRSPPlayer","stop":true,"IP4":{"Addr":"192.168.0.4","Port":5075,"Mcast":"","Relay":True}}
+
+	stop: 	true/false - set to true if this is a stop streaming request to a relay server. 
+
+Relay server message to listener packet example jSON string:
+{"Server":"rspRelayerServer","error":"Server full"}
+
+3.4 EXTENDED PAYLOAD PACKET
+
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|1 1|C R| Size  |      FEC      | Interleaving  |     Block     |    Column     |	Header
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                                                               |
+|               Interleaver Column data                         |     		Data being carried, 16 to 256
+|                                                               |         	bytes in 16 byte steps
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+| Optional CRC32  checksum of all previous bytes in the packet  |         	Optional Checksum
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+        
+
+FEC = 2 to 127; specifies how many bytes out of a 255 byte row are used for RS forward error correction
+Interleaving = 1 to 85; specifies how many packets/blocks are used to form a logical block interleaver column
+Block = 0 to 255 decimal
+Column = 0 to 254 decimal
+
+If Column = 255 decimal, then the transmitter is restarting a stream and all receivers should
+reset/clear their interleaves.  Transmission should always start out with sending several reset
+packets of this type.  Payload data is ignored in this case.
+
+This packet contains two additional bytes in the header to help listeners identify the formatting of the 
+data being sent.  With the FEC, Interleaving, and header byte (flags and size), a listener is able to set
+the required interleaver and RS decoder to recover the intended streaming data.
+
+THIS PACKET SHOULD NEVER BE USED FOR CALCULATING DATA PACE TIMING due to it's additional use in some relay 
+server implementations to send pre-roll data to new unicast relay requests. 
+
+4.0 APPENDIX
+
+Example jSON file advertising a unicast stream via a relay server:
+
+{
+	"rspStream": {
+		"Name": "Test Stream",
+	        "RSAPublicKey": "-----BEGIN PUBLIC KEY-----\nMIIBMjANBgkqhkiG9w0BAQEFAAOCAR8AMIIBGgKCAREA7y5MwQ51QDiXSfZAXfkx\ng1a8T3Khl0GfsZ6yuCUT2tngp8xLquS01hFMS+c2oR6mTjsaOarMEpupKchHjljc\nGwyBk+FtUc+8KpWe6+3mSBSddBYgvZzvKwmAPjQga0r4oLkTuP2qQMKo1zc6rlCv\nfcnbxMdXOUDDO6VGu67mqTkRs6NCjAb2OStoqKVTS3CpaLy+7IOEhUyQVtzoWpoM\nTmnKaa0TM6qTFz4UAOi5Al6lGFG9JbrxwnnWQVOHcsIgLxPRpsDfPRaJwD83HJ34\ni3LoQ5XNcgcXVT9CDcdfZT7z2QYBc6IHRdL/y3/zIaCMWTBmNRa7J7zSiuK8FVm3\nfSy3a3XW/f296rdm/Uvg3pcCAwEAAQ==\n-----END PUBLIC KEY-----",
+        	"IP4": {
+            		"MulticastGroup": "",
+            		"Port": 0,
+            		"ReportHost": "rsp.redmountainradio.com",
+            		"ReportPort": 5075,
+                       	"ReportHostSec": "rsp2.redmountainradio.com",
+                        "ReportPortSec": 5075,
+            		"ReportPeriod": 20
+        	}
+	}
+}
+Example jSON file advertising a list of (two) unicast stream via a relay server:
+
+{
+	"rspStream": [ {
+		"Name": "Test Stream",
+	        "RSAPublicKey": "-----BEGIN PUBLIC KEY-----\nMIIBMjANBgkqhkiG9w0BAQEFAAOCAR8AMIIBGgKCAREA7y5MwQ51QDiXSfZAXfkx\ng1a8T3Khl0GfsZ6yuCUT2tngp8xLquS01hFMS+c2oR6mTjsaOarMEpupKchHjljc\nGwyBk+FtUc+8KpWe6+3mSBSddBYgvZzvKwmAPjQga0r4oLkTuP2qQMKo1zc6rlCv\nfcnbxMdXOUDDO6VGu67mqTkRs6NCjAb2OStoqKVTS3CpaLy+7IOEhUyQVtzoWpoM\nTmnKaa0TM6qTFz4UAOi5Al6lGFG9JbrxwnnWQVOHcsIgLxPRpsDfPRaJwD83HJ34\ni3LoQ5XNcgcXVT9CDcdfZT7z2QYBc6IHRdL/y3/zIaCMWTBmNRa7J7zSiuK8FVm3\nfSy3a3XW/f296rdm/Uvg3pcCAwEAAQ==\n-----END PUBLIC KEY-----",
+        	"IP4": {
+            		"MulticastGroup": "",
+            		"Port": 0,
+            		"ReportHost": "rsp.redmountainradio.com",
+            		"ReportPort": 5075,
+                       	"ReportHostSec": "rsp2.redmountainradio.com",
+                        "ReportPortSec": 5075,
+            		"ReportPeriod": 20
+        	}, {
+		"Name": "Test Stream2",
+	        "RSAPublicKey": "-----BEGIN PUBLIC KEY-----\nMIIBMjANBgkqhkiG9w0BAQEFAAOCAR8AMIIBGgKCAREA7y5MwQ51QDiXSfZAXfkx\ng1a8T3Khl0GfsZ6yuCUT2tngp8xLquS01hFMS+c2oR6mTjsaOarMEpupKchHjljc\nGwyBk+FtUc+8KpWe6+3mSBSddBYgvZzvKwmAPjQga0r4oLkTuP2qQMKo1zc6rlCv\nfcnbxMdXOUDDO6VGu67mqTkRs6NCjAb2OStoqKVTS3CpaLy+7IOEhUyQVtzoWpoM\nTmnKaa0TM6qTFz4UAOi5Al6lGFG9JbrxwnnWQVOHcsIgLxPRpsDfPRaJwD83HJ34\ni3LoQ5XNcgcXVT9CDcdfZT7z2QYBc6IHRdL/y3/zIaCMWTBmNRa7J7zSiuK8FVm3\nfSy3a3XW/f296rdm/Uvg3pcCAwEAAQ==\n-----END PUBLIC KEY-----",
+        	"IP4": {
+            		"MulticastGroup": "",
+            		"Port": 0,
+            		"ReportHost": "rsp2.redmountainradio.com",
+            		"ReportPort": 5075,
+              		"ReportPeriod": 20
+        	} ]
+	}
+}
+
+Notes: 
+
+Name, if set, is passed along in receiver request reports, allowing it to be used as a stream reference when
+a server is hosting multiple streams.
+
+Authentication packets will be checked, decrypted with the provided public RSA key.  Note the \n escaped codes 
+in the public key.  jSON requires that this be a single line of text in quotes with escaped LF and/or CR 
+characters.
+
+This is an IPv4 unicast network stream.  Connection requests and receiver reports are to be sent to 
+rsp.redmountainradio.com on UPD port 5075. Receiver reports are to be sent every 20 seconds.  If this host 
+is also an RSP relay server, then when the first start request packet is received, the server at 
+rsp.redmountainradio.com will begin sending replica rsp packets to the address and port number the report was 
+received from until a request is received to stop, or a report has not been receive after some time-out 
+period.  
+
+The optional secondary report host is specified via the "ReportHostSec" and "ReportPortSec"
+properties.  This will cause receiver reports to be sent to this secondary address as well.  If the secondary 
+host is also an rsp relay server, it will interpret the report as a relay request, sending replica rsp packets 
+to the address and port number the report was received from.  In this case, the report sender will receive 
+two rsp streams, one from each of the rsp relay hosts, providing stream redundancy.
+
+If "Port": was non-zero, then this would be direct, preset broadcast from the sender (who ever that would be) 
+to this particular receiver with out the report host "relaying" replica packets from the source to the receiver.
+The receiver can still send receiver reports to the specified ReportHost.
+
+If the "Multicast" group is specified, then the receiver would be expected to join the specified multicast 
+group, and again, the report host will not "relaying" packets to the receiver, as it will be getting them 
+from the multicast group. The receiver is still expected to send receiver reports to the specified 
+ReportHost.
+
+An optional "Relay": True, or "Relay": 1 property (not shown in the examples) will override the usual No Unicast 
+Relay Request default when a Port or MulticastGroup is specified.  This can be useful if you want to use a static 
+unicast relay to a specific port or a multicast group AND also request a relay unicast stream for redundancy.
+ 
+Copyright 2011-2015, Ethan Funk
+
