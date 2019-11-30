@@ -1,0 +1,4 @@
+gst_plugin_rspsrc_get_desc
+gst_plugin_rspsrc_register
+gst_rspsrc_convertContentsData
+gst_rspsrc_get_type

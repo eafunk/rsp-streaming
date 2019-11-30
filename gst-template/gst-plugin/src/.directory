@@ -1,0 +1,2 @@
+libgstrspsrc_la-rs.lo: rs.c rs.h /usr/include/stdlib.h \
+  
