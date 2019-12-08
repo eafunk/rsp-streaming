@@ -14,5 +14,5 @@ clean:
 	rm -f $(TARGET)
 	
 install:
-chmod 775 $(TARGET)
-cp -ut /usr/local/bin/ $(TARGET)
+	chmod 775 $(TARGET)
+	cp -ut /usr/local/bin/ $(TARGET)

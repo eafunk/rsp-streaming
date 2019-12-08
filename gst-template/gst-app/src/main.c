@@ -66,8 +66,8 @@ void play_file(const gchar *filepath, const gchar *confStr)
 	float buffer;
 
 	while(1){
-	        if(msg = gst_bus_poll(bus, GST_MESSAGE_TAG | GST_MESSAGE_APPLICATION | GST_MESSAGE_EOS | GST_MESSAGE_BUFFERING |
-							GST_MESSAGE_CLOCK_LOST | GST_MESSAGE_ERROR, GST_SECOND)){
+		if(msg = gst_bus_poll(bus, GST_MESSAGE_TAG | GST_MESSAGE_APPLICATION | GST_MESSAGE_EOS | GST_MESSAGE_BUFFERING |
+																					GST_MESSAGE_CLOCK_LOST | GST_MESSAGE_ERROR, GST_SECOND)){
 			if(GST_MESSAGE_TYPE(msg) == GST_MESSAGE_ERROR){
 				GError *err = NULL;
 				gchar *dbg_str = NULL;
@@ -92,19 +92,19 @@ void play_file(const gchar *filepath, const gchar *confStr)
 				continue;
 			}
 			if(GST_MESSAGE_TYPE(msg) == GST_MESSAGE_BUFFERING){
-      				gint percent;
+				gint percent;
 
 				gst_message_parse_buffering (msg, &percent);
-      				if(percent == 100){
+					if(percent == 100){
 					if(buffering){
-        					buffering = FALSE;
-          					gst_element_set_state (pipeline, GST_STATE_PLAYING);
+						buffering = FALSE;
+						gst_element_set_state (pipeline, GST_STATE_PLAYING);
 						g_print ("\nAudio running\n");
 					}
 				}else{
 					if(!buffering){
-        					buffering = TRUE;
-          					gst_element_set_state (pipeline, GST_STATE_PAUSED);
+						buffering = TRUE;
+						gst_element_set_state (pipeline, GST_STATE_PAUSED);
 						g_print ("\nAudio buffering\n");
 					}
 				}
@@ -189,9 +189,9 @@ int main(int argc, char *argv[])
 			play_file(NULL, text);
 			return 0;
 		}else{
-           		play_file(argv[1], NULL);
-            		return 0;
-        	}
+			play_file(argv[1], NULL);
+			return 0;
+		}
 	}
 	fprintf(stderr, "Please provide a single command argument: a file path/name to an rsp listen file,\n");
 	fprintf(stderr, "or - to read a jSON formatted rsp listen string from stdin.\n");

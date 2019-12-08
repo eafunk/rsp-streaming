@@ -186,8 +186,8 @@ struct rspSession {
 	unsigned char playing;		// set automatically if rspSessionPacedReadData or high level rspSessionPlayTask is used to read 
 								// out data interleaver data. Otherwise, you will need to set and clear this to indicate the stream
 								// state in receiver reports.
-	struct timeval lastWrTime;	// the next three variables are used by the high level PlayTask
-	struct timeval lastRdTime;
+	struct timespec lastWrTime;	// the next three variables are used by the high level PlayTask
+	struct timespec lastRdTime;
 	unsigned int timeout;
 };
 
@@ -263,12 +263,12 @@ unsigned char rspSessionSetPrivKeyFile(struct rspSession *session, FILE *fp, con
 unsigned char rspSessionFormatDiscover(struct rspSession *session, unsigned int size);
 
 // interleaver column (packet data) read and write
-unsigned char rspSessionWritePacket(struct rspSession *session, unsigned int *size, struct timeval *lastTime);
+unsigned char rspSessionWritePacket(struct rspSession *session, unsigned int *size, struct timespec *lastTime);
 unsigned int rspSessionReadPacket(struct rspSession *session, unsigned char **packet, unsigned char *data);
 	
 // interleaver row (decoded stream data) read and write
 unsigned char rspSessionWriteData(struct rspSession *session, unsigned char *data, unsigned int size);
-unsigned char *rspSessionPacedReadData(struct rspSession *session, unsigned int *size, struct timeval *lastTime);
+unsigned char *rspSessionPacedReadData(struct rspSession *session, unsigned int *size,struct timespec *lastTime);
 unsigned char *rspSessionReadData(struct rspSession *session, unsigned int *size, float *period, unsigned char beyond);
 
 // interleaver read and write possition functions
@@ -288,7 +288,7 @@ char *rspSessionNextMetaStr(struct rspSession *session);
 // high level functions
 void rspSessionCheckStatusTime(struct rspSession *session);
 int rspSessionNetworkRead(struct rspSession *session, unsigned char noBlock);
-unsigned char rspSessionFillTask(struct rspSession *session, char** msg, struct timeval *lastRxTime);
+unsigned char rspSessionFillTask(struct rspSession *session, char** msg, struct timespec *lastRxTime);
 unsigned char *rspSessionPlayTaskPull(struct rspSession *session, cJSON **meta, int *size, unsigned char beyond);
 int rspSessionPlayTaskPush(struct rspSession *session, char** msg, cJSON **meta, unsigned char **data, unsigned char rebuffer, float rb_threshold);
 unsigned char rspPacketRecvrRequestSend(struct rspSession *session, struct sockaddr_in6 *addr, unsigned char start);

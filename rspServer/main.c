@@ -1461,7 +1461,7 @@ void rspReformatRelayData(struct serverContext *cPtr, struct sourceRecord *sPtr,
 	}
 }
 
-unsigned char processStreamData(struct serverContext *cPtr, struct sourceRecord *sPtr, char **sc_meta, char **metaStr, unsigned int *metaPos, struct timeval *lastTime)
+unsigned char processStreamData(struct serverContext *cPtr, struct sourceRecord *sPtr, char **sc_meta, char **metaStr, unsigned int *metaPos, struct timespec *lastTime)
 {
 	unsigned int size;
 	ssize_t rsize;
@@ -1479,7 +1479,7 @@ unsigned char processStreamData(struct serverContext *cPtr, struct sourceRecord 
 		// no transcoder socket blockage... look for new interleaver data
 		if(!sPtr->sourceStatus && (rspSessionGetBalance(sPtr->rsp) < 0.00)){
 			// need to fill buffer more and set last time to now as if we just performed a read.
-			gettimeofday(lastTime, NULL);
+			clock_gettime(CLOCK_MONOTONIC, &lastTime);
 			return FALSE;
 		}
 		// try to get more data from interleaver
@@ -1743,8 +1743,8 @@ void *relayTask(void* refCon)
 	struct sourceRecord *sPtr;
 	struct relayPass *pass;
 	struct timeval tv;
-	struct timeval lastWr;
-	struct timeval lastRd;
+	struct timespec lastWr;
+	struct timespec lastRd;
 	unsigned char packet[277];
 	unsigned int size;
 	int count;

@@ -8,7 +8,7 @@
  and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
  
  The above copyright notice and this permission notice shall be included in all copies or substantial portions 
- of the Software.
+ of the Software. 
  
  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED 
  TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL 
@@ -27,7 +27,17 @@
 	#include <malloc/malloc.h>
 #endif
 
-// Handy String untility functions
+// Handy utility functions
+
+void timespec_diff(struct timespec *start, struct timespec *end, struct timespec *diff){
+	if ((end->tv_nsec - start->tv_nsec) < 0) {
+		diff->tv_sec = end->tv_sec - start->tv_sec - 1;
+		diff->tv_nsec = 1000000000 + end->tv_nsec - start->tv_nsec;
+	} else {
+		diff->tv_sec = end->tv_sec - start->tv_sec;
+		diff->tv_nsec = end->tv_nsec - start->tv_nsec;
+	}
+}
 
 void appendstr(char **string, const char *cStr)
 {
@@ -335,8 +345,8 @@ void rspSessionClear(struct rspSession *session, unsigned char close_net)
 	session->wrRate = -1.0;
 	session->playing = FALSE;
 	
-	bzero(&session->lastRdTime, sizeof(struct timeval));
-	bzero(&session->lastWrTime, sizeof(struct timeval));
+	bzero(&session->lastRdTime, sizeof(struct timespec));
+	bzero(&session->lastWrTime, sizeof(struct timespec));
 	
 	session->extCount = 250;	// set to send 5 reset packets initially when reading packets for transmission
 	
@@ -1248,7 +1258,7 @@ unsigned char rspSessionFormatDiscover(struct rspSession *session, unsigned int 
 	return RSP_ERROR_WAITING;
 }
 
-unsigned char rspSessionWritePacket(struct rspSession *session, unsigned int *size, struct timeval *lastTime)
+unsigned char rspSessionWritePacket(struct rspSession *session, unsigned int *size, struct timespec *lastTime)
 {
 	unsigned char flags;
 	unsigned char block, lb;
@@ -1439,10 +1449,10 @@ unsigned char rspSessionWritePacket(struct rspSession *session, unsigned int *si
 					session->lastWrPos = pos;
 				else{
 					// Update write pace statistics
-					struct timeval now;
-					gettimeofday(&now, NULL);
+					struct timespec now;
+					clock_gettime(CLOCK_MONOTONIC, &now);
 
-					if(session->wrRate < 0.0){					
+					if(session->wrRate < 0.0){
 						// reset lastTime to now
 						*lastTime = now;
 						session->lastWrPos = pos;
@@ -1450,11 +1460,11 @@ unsigned char rspSessionWritePacket(struct rspSession *session, unsigned int *si
 						return RSP_ERROR_NONE;
 					}
 					
-					if(lastTime->tv_sec || lastTime->tv_usec){					
+					if(lastTime->tv_sec || lastTime->tv_nsec){
 						// get interleaver position difference in blocks after the last write
 						bk_diff = pos - bk_diff;
 						float period = (float)(now.tv_sec - lastTime->tv_sec);
-						period = period + (float)(now.tv_usec - lastTime->tv_usec) * 1.0e-6;
+						period = period + (float)(now.tv_nsec - lastTime->tv_nsec) * 1.0e-9;
 						// convert from blocks to rows
 						row_diff = bk_diff * (float)session->interleaving * (float)session->colSize;
 						if((period > 1.0e-3) && (bk_diff > 0.0)){ 
@@ -1604,9 +1614,9 @@ unsigned char rspSessionWriteData(struct rspSession *session, unsigned char *dat
 	return RSP_ERROR_NONE;
 }
 
-unsigned char *rspSessionPacedReadData(struct rspSession *session, unsigned int *size, struct timeval *lastTime)
+unsigned char *rspSessionPacedReadData(struct rspSession *session, unsigned int *size, struct timespec *lastTime)
 {
-	struct timeval now;
+	struct timespec now;
 	float period;
 	float i;
 	unsigned char *result;
@@ -1618,10 +1628,10 @@ unsigned char *rspSessionPacedReadData(struct rspSession *session, unsigned int 
 	*size = 0;
 	result = NULL;
 	if(session->wrRate > 0.0){
-		gettimeofday(&now, NULL);
-		if((lastTime->tv_sec || lastTime->tv_usec) && (session->wrRate > 0.0)){
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		if((lastTime->tv_sec || lastTime->tv_nsec) && (session->wrRate > 0.0)){
 			period = (float)(now.tv_sec - lastTime->tv_sec);
-			period = period + (float)(now.tv_usec - lastTime->tv_usec) * 1.0e-6;
+			period = period + (float)(now.tv_nsec - lastTime->tv_nsec) * 1.0e-9;
 			
 			if(period < 1.0e-6)
 				period = 1.0e-6;
@@ -1648,9 +1658,9 @@ unsigned char *rspSessionPacedReadData(struct rspSession *session, unsigned int 
 			if(!session->playing && *size)
 				session->playing = TRUE;
 			
-			lastTime->tv_usec = lastTime->tv_usec + modff(period, &i) * 1.0e6;
-			while(lastTime->tv_usec > 1.0e6){
-				lastTime->tv_usec = lastTime->tv_usec - 1.0e6;
+			lastTime->tv_nsec = lastTime->tv_nsec + modff(period, &i) * 1.0e9;
+			while(lastTime->tv_nsec > 1.0e9){
+				lastTime->tv_nsec = lastTime->tv_nsec - 1.0e9;
 				i++;
 			}
 			lastTime->tv_sec = lastTime->tv_sec + (int)i;
@@ -2092,7 +2102,7 @@ int rspSessionNetworkRead(struct rspSession *session, unsigned char noBlock)
 	return size;
 }
 
-unsigned char rspSessionFillTask(struct rspSession *session, char** msg, struct timeval *lastRxTime)
+unsigned char rspSessionFillTask(struct rspSession *session, char** msg, struct timespec *lastRxTime)
 {
 	int result;
 	unsigned int usize;
@@ -2198,7 +2208,7 @@ int rspSessionPlayTaskPush(struct rspSession *session, char** msg, cJSON **meta,
 	unsigned int size;
 	unsigned char rsp_err;
 	cJSON *item;
-	struct timeval now, tv_diff;			
+	struct timespec now, ts_diff;
 	
 	// This is a "Push Mode" playtask: It handles interleaver filling from the network and stream data reading in a single thread. 
 	// The loop it is called in must not blocked external to this function so that this function can handle stream and network  
@@ -2219,15 +2229,15 @@ int rspSessionPlayTaskPush(struct rspSession *session, char** msg, cJSON **meta,
 	*msg = NULL;
 	*meta = NULL;
 	
-	if(!session->lastWrTime.tv_sec && !session->lastWrTime.tv_usec)
-		gettimeofday(&session->lastWrTime, NULL);
+	if(!session->lastWrTime.tv_sec && !session->lastWrTime.tv_nsec)
+		clock_gettime(CLOCK_MONOTONIC, &session->lastWrTime);
 	
 	if(*data == NULL)
 		rsp_err = rspSessionFillTask(session, msg, &session->lastWrTime);
 
-	gettimeofday(&now, NULL);
-	timersub(&now, &session->lastWrTime, &tv_diff);
-	if(tv_diff.tv_sec > session->timeout){
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	timespec_diff(&session->lastWrTime, &now, &ts_diff);
+	if(ts_diff.tv_sec > session->timeout){
 		// network time-out since last write
 		*data = NULL;
 		return -4;
@@ -2242,7 +2252,7 @@ int rspSessionPlayTaskPush(struct rspSession *session, char** msg, cJSON **meta,
 	}
 			
 	if(rebuffer && (rspSessionGetBalance(session) <= rb_threshold)){
-		gettimeofday(&session->lastRdTime, NULL);
+		clock_gettime(CLOCK_MONOTONIC, &session->lastRdTime);
 		// No more data to read
 		result = 0;	
 		*data = NULL;
