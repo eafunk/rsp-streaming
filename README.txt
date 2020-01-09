@@ -1,4 +1,4 @@
-Updated Nov. 30, 2019
+Updated January. 10, 2020
 
 The Resilient Streaming Protocol is an Internet protocol built on top of 
 the Unreliable Datagram protocol (UDP) layer for transporting a unidirectional, 
@@ -20,7 +20,7 @@ connection to work together to produce a reliable and stable streaming media
 link for the radio station.
 
 In this project directory you will find:
-- A detailed protocol documentation in the rsp_protocol.txt file. 
+- Detailed protocol documentation in the rsp_protocol.txt file. 
 
 - Directions for generating a public/private key pair for optional
   use by the RSP protocol to prevent stream source spoofing in the
@@ -29,7 +29,8 @@ In this project directory you will find:
 - C code for protocol implementation in the rsp-library directory.
   Both send and receive functions are implemented using either a 
   application call paced push or blocking pull approach, depending on 
-  the end applications data rate timing design.
+  the end applications data rate timing design. NO BUILD FILES. Include
+  these files in your C project, and call their function accordingly.
 
 - An rsp protocol streaming relay server that makes use of rsp 
   library code in the rspServer directory. The rspServer directory 
@@ -44,12 +45,16 @@ In this project directory you will find:
   using auto-make, for both gstreamer plugins and the playback application 
   are found within the gst-template directory.
   
-- Gstreamer plugins that makes use of rsp library code to implement a 
-  gstreamer1.0 rsp stream decoder and encoder (gstreamer source and sink 
-  plugins) in the gst-template/gst-plugins directory. 
+- Gstreamer source and sink plugins that makes use of rsp library code to 
+  implement a gstreamer1.0 rsp stream decoder and encoder in the 
+  gst-template/gst-plugins directory. 
+  
+  Gaain, the gst-template build instructions, using auto-make, for both 
+  gstreamer plugins and the playback application are found within the 
+  gst-template directory.
   
   Note that the rsp protocol is data content type agnostic, so other 
-  gstreamer plugings are required to decode the rsp deliverd content 
+  gstreamer plugings are required to encode/decode the rsp deliverd content 
   in a gstreamer pipeline, i.e. mp3, aac, etc.  The rsp protocol does 
   annouce the content type of the data being transported, assuming the 
   content type was properly specified on the encoder side of the stream. 
@@ -57,5 +62,3 @@ In this project directory you will find:
   gstreamer plugins and the playback application are found within the 
   gst-template directory.
   
-  **** ONLY A source (decoder) plugin is currently coded. A sink (encoder)
-  pluging will be coded shortly, since I need it for another project. ****
