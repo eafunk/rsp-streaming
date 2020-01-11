@@ -44,6 +44,7 @@
  * 	doted-quad with a required colon separated port number (i.e. 127.0.0.1:5076).  
  * 	For IPv6 numeric, the format is a bracket enclosed hexidecimal IPv6 address, with
  * 	a trailing colon separated port number (i.e. [fe80::1ff:fe23:4567:890a]:5076).
+ * 	DNS resolution of names trys IPv6 first, then IPv4 if IPv6 resolve failes.
  * 
  * 	"ttl" property [multicast TTL decimal integer], (default 20) specifies a multicast 
  * 	packet TTL value hop count limit.
@@ -179,7 +180,6 @@ static gboolean gst_rspsink_setcaps(GstBaseSink *sink, GstCaps *caps);
 static gboolean gst_rspsink_start(GstBaseSink *sink);
 static gboolean gst_rspsink_stop(GstBaseSink *sink);
 static gboolean gst_rspsink_unlock(GstBaseSink *sink);
-static gboolean gst_rspsink_unlock_stop(GstBaseSink *sink);
 static void gst_rspsink_set_property(GObject *object, guint prop_id,
 											const GValue *value, GParamSpec *pspec);
 static void gst_rspsink_get_property(GObject *object, guint prop_id,
@@ -194,7 +194,7 @@ gboolean rspsinkplugin_init(GstPlugin *plugin){
 GST_PLUGIN_DEFINE (
 	GST_VERSION_MAJOR,
 	GST_VERSION_MINOR,
-	rspsrc,
+	rspsink,
 	"Send data via RSP protocol",
 	rspsinkplugin_init,
 	"0.8",
@@ -228,7 +228,6 @@ static void gst_rspsink_class_init(GstrspsinkClass *klass){
 	gstbasesink_class->start = gst_rspsink_start;
 	gstbasesink_class->stop = gst_rspsink_stop;
 	gstbasesink_class->unlock = gst_rspsink_unlock;
-	gstbasesink_class->unlock_stop = gst_rspsink_unlock_stop;
 
 	gst_element_class_add_pad_template(gstelement_class,
 					gst_static_pad_template_get(&sink_template));
@@ -319,7 +318,6 @@ static void gst_rspsink_init(Gstrspsink *rspsink){
 	rspsink->curMetaStr = NULL;
 	rspsink->metaPos = 0;
 
-	rspsink->cancellable = g_cancellable_new();
 	rspsink->prop_sendto = RSP_DEFAULT_SENDTO;
 	rspsink->prop_ttl = RSP_DEFAULT_TTL;
 	rspsink->prop_tos = RSP_DEFAULT_TOS;
@@ -548,54 +546,58 @@ void clients_clear(Gstrspsink *rspsink){
 	rspsink->destinations = NULL;
 }
 
-struct sockaddr_in6 *setSockAddr(struct sockaddr_in6 *adrPtr, unsigned char ip6, const char *addr){
+struct sockaddr_in6 *setSockAddr(struct sockaddr_in6 *adrPtr, unsigned char ip6, unsigned char resolve, char *addrin){
 	unsigned int size;
 	struct sockaddr_in *v4bindAddr;
-	struct in6_addr v6bindto;
-	u_int32_t v4bindto;
-	char *pstr;
+	char *pstr, *addr;
 	unsigned short port;
 	
 	// separe address from port
-	if(*addr == '['){
+	
+	pstr = NULL;
+	if(addr = strchr(addrin, '[')){
+		// If IPv6 address is bracket enclosed, must be a number
 		addr++;
 		if(pstr = strchr(addr, ']')){
 			*pstr = 0;
 			pstr++;
-		}
+			if(pstr = strchr(pstr, ':'))
+				pstr++;
+		}else
+			return NULL;
 	}else{
-		if(pstr = strrchr(addr, ':')){
-			*pstr = 0;
+		// If address is NOT bracket enclosed, must be a name, an IPv4 doted quad address
+		addr = addrin;
+		if(pstr = strchr(addr, ':')){
+			*pstr = 0; // null terminate the address portion
 			pstr++;
 		}
 	}
 	port = 0;
 	if(pstr)
 		port = atoi(pstr);
-	
+	if(!port)
+		return NULL;
+
+	size = sizeof(struct sockaddr_in6);
+	bzero(adrPtr, size);
 	if(ip6){
 		// IPv6 network settings
-		size = sizeof(struct sockaddr_in6);
-		bzero(adrPtr, size);
 #ifndef __linux__
 		adrPtr->sin6_len = sizeof(struct sockaddr_in6);
 #endif		
-		if(inet_pton(AF_INET6, addr, &v6bindto) <= 0)
+		if(inet_pton(AF_INET6, addr, &adrPtr->sin6_addr) <= 0)
 			return NULL;
 		adrPtr->sin6_family = AF_INET6;
-		adrPtr->sin6_addr = v6bindto;
 		adrPtr->sin6_port = htons(port);
 	}else{
-		size = sizeof(struct sockaddr_in6);
-		bzero(adrPtr, size);
 		v4bindAddr = (struct sockaddr_in *)adrPtr;
 #ifndef __linux__
 		v4bindAddr->sin_len = sizeof(struct sockaddr_in);
 #endif		
-		if(inet_pton(AF_INET, addr, &v4bindto) <= 0)
+		if(inet_pton(AF_INET, addr, &v4bindAddr->sin_addr.s_addr) <= 0)
 			return NULL;
 		v4bindAddr->sin_family = AF_INET;
-		v4bindAddr->sin_addr.s_addr = v4bindto;
 		v4bindAddr->sin_port = htons(port);
 	}
 	return adrPtr;
@@ -617,7 +619,7 @@ int socketSetup(Gstrspsink *rspsink, unsigned char ip6){
 			goto fail;
 		}
 		if(rspsink->prop_bindip6){
-			if(setSockAddr(&bindAddr, TRUE, rspsink->prop_bindip6) == NULL)
+			if(setSockAddr(&bindAddr, TRUE, FALSE, rspsink->prop_bindip6) == NULL)
 				goto fail;
 			size = sizeof(struct sockaddr_in6);
 			if(bind(sd, (struct sockaddr *)&bindAddr, size) < 0)
@@ -634,7 +636,7 @@ int socketSetup(Gstrspsink *rspsink, unsigned char ip6){
 		}
 		// bint to port, if set
 		if(rspsink->prop_bindip4){
-			if(setSockAddr(&bindAddr, FALSE, rspsink->prop_bindip4) == NULL)
+			if(setSockAddr(&bindAddr, FALSE, FALSE, rspsink->prop_bindip4) == NULL)
 				goto fail;
 			size = sizeof(struct sockaddr_in);
 			if(bind(sd, (struct sockaddr *)&bindAddr, size) < 0)
@@ -656,38 +658,27 @@ fail:
 	return -1;
 }
 
-struct destination *client_add(Gstrspsink *rspsink, const gchar *host, gint port){
+struct destination *client_add(Gstrspsink *rspsink, const gchar *host){
 	struct destination *client;
-	GInetAddress *inetaddr = NULL;
-	GSocketAddress *sockaddr;
-	GSocketFamily family;
-	GResolver *resolver = NULL;
-	GError *err = NULL;
+	struct sockaddr_in6 sockaddr;
+	gchar *tmp;
 
-	sockaddr = g_inet_socket_address_new_from_string(host, port);
-	if(!sockaddr){
-		GList *results;
-
-		resolver = g_resolver_get_default();
-		results = g_resolver_lookup_by_name(resolver, host, rspsink->cancellable, &err);
-		if(!results){
+	tmp = g_strdup(host);
+	if(!setSockAddr(&sockaddr, TRUE, TRUE, tmp)){
+		g_free(tmp);
+		tmp = g_strdup(host);
+		if(!setSockAddr(&sockaddr, FALSE, TRUE, host)){
 			GST_ELEMENT_WARNING(rspsink, RESOURCE, WRITE,
-											("Failed to resolve client address %s", host),
-											("Failed to resolve client address %s", host));
-			goto cleanup;
+							("Failed to resolve client address %s", host),
+							("Failed to resolve client address %s", host));
+			g_free(tmp);
+			return NULL;
 		}
-		inetaddr = G_INET_ADDRESS(g_object_ref(results->data));
-		sockaddr = g_inet_socket_address_new(inetaddr, port);
-
-		g_resolver_free_addresses(results);
-		g_object_unref(resolver);
-		resolver = NULL;
-		g_object_unref(inetaddr);
 	}
-
+	g_free(tmp);
+	
 	if(client = (struct destination *)calloc(1, sizeof(struct destination))){
-		family = g_socket_address_get_family(sockaddr);
-		if(family == G_SOCKET_FAMILY_IPV6){
+		if(sockaddr.sin6_family == AF_INET6){
 			if(rspsink->rsp_socket6 < 0){
 				// create socket
 				rspsink->rsp_socket6 = socketSetup(rspsink, 1);
@@ -697,13 +688,9 @@ struct destination *client_add(Gstrspsink *rspsink, const gchar *host, gint port
 				}
 			}
 			client->socket = rspsink->rsp_socket6;
-			// populate native socket sendto address
-			if(!g_socket_address_to_native(sockaddr, (void*)&client->sock_addr,
-													sizeof(client->sock_addr), &err)){
-				GST_ERROR_OBJECT(rspsink, "Failed to create IPv6 socket");
-				goto cleanup;
-			}
-		}else if(family == G_SOCKET_FAMILY_IPV4){
+			// populate socket sendto address
+			client->sock_addr = sockaddr;
+		}else if(sockaddr.sin6_family == AF_INET){
 			if(rspsink->rsp_socket4 < 0){
 				// create socket
 				rspsink->rsp_socket4 = socketSetup(rspsink, 0);
@@ -714,31 +701,19 @@ struct destination *client_add(Gstrspsink *rspsink, const gchar *host, gint port
 			}
 			client->socket = rspsink->rsp_socket4;
 			// populate native socket sendto address
-			if(!g_socket_address_to_native(sockaddr, (void*)&client->sock_addr,
-													sizeof(client->sock_addr), &err)){
-				GST_ELEMENT_WARNING(rspsink, RESOURCE, WRITE,
-										("Failed to create native socketaddress record for %s", host),
-										("Failed to create native socketaddress record for %s", host));
-				goto cleanup;
-			}
+			client->sock_addr = sockaddr;
 		}else{
 			// invalid socket family type
 			goto cleanup;
 		}
-		g_object_unref(sockaddr);
 		client->next = rspsink->destinations;
 		rspsink->destinations = client;
 		return client;
 	}
 
 cleanup:
-	g_clear_error(&err);
-	if(resolver)
-		g_object_unref(resolver);
 	if(client)
 		free(client);
-	if(sockaddr)
-		g_object_unref(sockaddr);
 	return NULL;
 }
 
@@ -758,10 +733,6 @@ static void gst_rspsink_finalize(GObject *object){
 	if(rspsink->prop_key_pw)
 		free(rspsink->prop_key_pw);
 	
-	if(rspsink->cancellable){
-		g_object_unref(rspsink->cancellable);
-		rspsink->cancellable = NULL;
-	}
 	rspSessionFree(rspsink->rsp);
 	
 	clients_clear(rspsink);
@@ -773,44 +744,36 @@ static gboolean gst_rspsink_start(GstBaseSink *sink){
 	Gstrspsink *rspsink = GST_rspsink(sink);
 	gchar **clients;
 	gint i;
-	gchar *pstr, *addr;
-	gint port;
 
 	if(rspsink->prop_sendto == NULL){
-		GST_ERROR_OBJECT(rspsink, "Failed to specifiy at least one network destination.");
+		GST_ERROR_OBJECT(rspsink, "Failed: sendto destination property is empty.");
 		return FALSE;
 	}
 	
 	rspSessionClear(rspsink->rsp, TRUE);
-	if(rspSessionInit(rspsink->rsp) == RSP_ERROR_NONE){
+	
+	rspsink->rsp->FECroots = rspsink->prop_fec;
+	rspsink->rsp->interleaving = rspsink->prop_interleaving;
+	rspsink->rsp->colSize = rspsink->prop_payload;
+	rspsink->rsp->flags = 0;
+	if(rspsink->prop_crc)
+		rspsink->rsp->flags = rspsink->rsp->flags | RSP_FLAG_CRC;
+	if(rspsink->prop_rs)
+		rspsink->rsp->flags = rspsink->rsp->flags | RSP_FLAG_RS;
+	
+	if(rspSessionInit(rspsink->rsp) != RSP_ERROR_NONE){
 		GST_ERROR_OBJECT(rspsink, "Failed to initialize RSP session. Verify settings.");
 		return FALSE;
 	}
 
   /* clear all existing clients */
 	clients_clear(rspsink);
-
+	
+	/* rebuild client list based on current prop_sendto string */
 	clients = g_strsplit(rspsink->prop_sendto, ",", 0);
-	for(i = 0; clients[i]; i++){
-		addr = clients[i];
-		// separe address from port
-		if(*addr == '['){
-			addr++;
-			if(pstr = strchr(addr, ']')){
-				*pstr = 0;
-				pstr++;
-			}
-		}else{
-			if(pstr = strrchr(addr, ':')){
-				*pstr = 0;
-				pstr++;
-			}
-		}
-		port = 0;
-		if(pstr)
-			port = atoi(pstr);
-		client_add(rspsink, addr, port);
-	}
+	for(i = 0; clients[i]; i++)
+		client_add(rspsink, clients[i]);
+	g_strfreev(clients);
 	if(rspsink->destinations)
 		return TRUE;
 	GST_ERROR_OBJECT(rspsink, "Failed to specifiy at least one VALID network destination.");
@@ -829,19 +792,8 @@ static gboolean gst_rspsink_stop(GstBaseSink *sink){
 static gboolean gst_rspsink_unlock(GstBaseSink *sink){
 	Gstrspsink *rspsink = GST_rspsink(sink);
 	
-	g_cancellable_cancel(rspsink->cancellable);
 	clients_clear(rspsink);
 	
-	return TRUE;
-}
-
-static gboolean gst_rspsink_unlock_stop(GstBaseSink * sink){
-	Gstrspsink *rspsink = GST_rspsink(sink);
-
-	if(rspsink->cancellable)
-		g_object_unref(rspsink->cancellable);
-	rspsink->cancellable = g_cancellable_new();
-
 	return TRUE;
 }
 

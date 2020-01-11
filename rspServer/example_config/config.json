@@ -58,8 +58,18 @@
                 ; or you can instead include the "rspStream" properties that would be in such a file directly here.
                 "rspStream": {
                     "Name": "MtnChill128",
+                    ; If RSAPublicKey is specified, only source stream packets for this source that match authentication
+		    ; will be accepted and relayed by this server. See the RSP protocol specification for details.
                     "RSAPublicKey": "-----BEGIN PUBLIC KEY-----\nMIIBMjANBgkqhkiG9w0BAQEFAAOCAR8AMIIBGgKCAREA7y5MwQ51QDiXSfZAXfkx\ng1a8T3Khl0GfsZ6yuCUT2tngp8xLquS01hFMS+c2oR6mTjsaOarMEpupKchHjljc\nGwyBk+FtUc+8KpWe6+3mSBSddBYgvZzvKwmAPjQga0r4oLkTuP2qQMKo1zc6rlCv\nfcnbxMdXOUDDO6VGu67mqTkRs6NCjAb2OStoqKVTS3CpaLy+7IOEhUyQVtzoWpoM\nTmnKaa0TM6qTFz4UAOi5Al6lGFG9JbrxwnnWQVOHcsIgLxPRpsDfPRaJwD83HJ34\ni3LoQ5XNcgcXVT9CDcdfZT7z2QYBc6IHRdL/y3/zIaCMWTBmNRa7J7zSiuK8FVm3\nfSy3a3XW/f296rdm/Uvg3pcCAwEAAQ==\n-----END PUBLIC KEY-----",
                     "IP4": {
+			; Because Port is zero, we will make a listen request for a stream named MtnChill128 to 
+			; the specified ReportHost, which is expected to be an rspServer that will send the stream
+			; to us as a source. This allows chaining of rspServers.  Had Port been non-zero, we would 
+			; not make a listen request from the ReportHost, and would instead just listen on the 
+			; specified port for a stream to be sent to us. In this case, status reports are still sent 
+			; to ReportHost, but the report host, if it is an rspServer, will not initial sending a 
+			; stream back to us. It will simply collect the reports, adding report data to it's own 
+			; status reports, tagged with our viaIdentity specified earlier in this file.
                         "MulticastGroup": "",
                         "Port": 0,
                         "ReportHost": "sc5.redmountainradio.com",

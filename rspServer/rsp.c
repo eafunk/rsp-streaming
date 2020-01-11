@@ -605,7 +605,7 @@ unsigned char rspSessionNetworkSetup(cJSON *group, struct rspSession *session, u
 		if(rr_host2 && (rr_port2 > 0)){
 			// will be sending receiver secondary reports and/or start/stop unicast stream requests
 			// set up an address record...
-			// First try the address as doted-quad format
+			// First try the address as numeric format
 			if((result = inet_pton(AF_INET6, rr_host, &session->rrAddr2.sin6_addr)) < 0){
 				status = RSP_ERROR_INIT; 
 				goto fail;
@@ -948,7 +948,7 @@ void rspSessionClusterSetup(struct rspSession *session, cJSON *relayCluster)
 	unsigned int size, uindex;
 	time_t now;
 	int index, portno, result;
-	char *tok, *copy, *host, *portstr;
+	char *copy, *host, *portstr;
 	cJSON *item;
 	cJSON *group;
 	unsigned char IPv6;
@@ -986,22 +986,27 @@ void rspSessionClusterSetup(struct rspSession *session, cJSON *relayCluster)
 					copy = cJSON_strdup(item->valuestring);
 					bzero(&rec->host, sizeof(struct sockaddr_in6));
 					if(IPv6){
-						if((host = strchr(copy, '[')) == NULL)
-						   // IPv6 URL not formated as expected: [addr]:port
-						   continue;
-						else
+						if(host = strchr(copy, '[')){
+							// If IPv6 address is bracket enclosed, must be a number
 							host++;
-						if((tok = strchr(copy, ']')) == NULL)
-							continue;						
-						else
-						   // null terminate host section of URL
-						   *tok = 0;
-						if((portstr = strchr(tok+1, ':')) == NULL)
-							continue;
-						if(*(++portstr) == 0)
-							continue;						
+							if((portstr = strchr(host, ']')) == NULL)
+								continue;
+							*portstr = 0;
+							portstr++;
+							if((portstr = strchr(portstr, ':')) == NULL)
+								continue;
+							portstr++;
+						}else{
+							// If IPv6 address is NOT bracket enclosed, must be a name
+							host = copy;
+							if((portstr = strchr(host, ':')) == NULL)
+								continue;
+							*portstr = 0;
+							portstr++;
+						}
+
 						if((portno = atoi(portstr)) == 0)
-						   continue;						
+							continue;						
 						// First try the address as numeric format
 						if((result = inet_pton(AF_INET6, host, &rec->host)) < 0)
 							continue;						
@@ -1022,15 +1027,12 @@ void rspSessionClusterSetup(struct rspSession *session, cJSON *relayCluster)
 						size++;
 						prev->next = rec;
 						prev = rec;
-
 					}else{
 						struct sockaddr_in *addr = (struct sockaddr_in *)&rec->host;
 						host = copy;
 						if((portstr = strchr(host, ':')) == NULL)
 							continue;
 						*portstr = 0;
-						if(*(++portstr) == 0)
-							continue;						
 						if((portno = atoi(portstr)) == 0)
 							continue;						
 						// First try the address as numeric format
@@ -1318,12 +1320,13 @@ unsigned char rspSessionWritePacket(struct rspSession *session, unsigned int *si
 				bk_diff = session->rdPosition + kTargetWrRdGap + 0.5;
 				if(bk_diff > 3)
 					bk_diff = bk_diff - 3;
-				if(lb != (unsigned char)bk_diff)
+				if(lb != (unsigned char)bk_diff){
 					// Not for a logical block within +/- 0.5 logical blocks of the target write time.
 					// target write location is the current read location + target read/write gap (kTargetWrRdGap).
 					// Early or late beyond the acceptable window: Don't use this packet 
 					session->BadStat = session->BadStat + session->columnScaling;
 					return RSP_ERROR_WINDOW;
+				}
 			}
 			
 			if(il_getChecksumValid(session->interleaver, block))

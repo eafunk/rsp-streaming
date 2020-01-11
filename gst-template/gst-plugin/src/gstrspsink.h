@@ -57,7 +57,6 @@ struct _Gstrspsink {
 	struct destination *destinations;
 	int rsp_socket4;
 	int rsp_socket6;
-	GCancellable  *cancellable;
 
 	/* properties */
 	gchar			*prop_sendto;
