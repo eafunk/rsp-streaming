@@ -170,9 +170,9 @@ struct rspSession {
 	struct rs *network_rs;
 	struct rs *audio_rs;
 	
-    float bw;                   // averaging filter band width multiplier
+	float bw;                   // averaging filter band width multiplier
 	float avWrPosition;
-    float lastWrPos;
+	float lastWrPos;
 	float rdPosition;
 	float wrRate;				// equivelent interleaver rows per second
 					

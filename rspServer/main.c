@@ -1125,15 +1125,15 @@ void updateMetaString(char **sc_meta)
 	unsigned int count;
 	
 	new_str = NULL;
-	appendstr(&new_str, "*StreamTitle='");
+	appendstr(&new_str, "*StreamTitle='");	// NOTE: * will be replaced by string count
 	if(sc_meta[1])
 		appendstr(&new_str,sc_meta[1]);
-	appendstr(&new_str, "';StreamURL='");
-	if(sc_meta[3])
+	if(sc_meta[3]){
+		appendstr(&new_str, "';StreamURL='");
 		appendstr(&new_str,sc_meta[3]);
-	else{
-		if(sc_meta[2])
-			appendstr(&new_str,sc_meta[2]);
+	}else if(sc_meta[2]){
+		appendstr(&new_str, "';StreamURL='");
+		appendstr(&new_str,sc_meta[2]);
 	}
 	appendstr(&new_str, "';");
 	
@@ -1479,7 +1479,7 @@ unsigned char processStreamData(struct serverContext *cPtr, struct sourceRecord 
 		// no transcoder socket blockage... look for new interleaver data
 		if(!sPtr->sourceStatus && (rspSessionGetBalance(sPtr->rsp) < 0.00)){
 			// need to fill buffer more and set last time to now as if we just performed a read.
-			clock_gettime(CLOCK_MONOTONIC, &lastTime);
+			clock_gettime(CLOCK_MONOTONIC, lastTime);
 			return FALSE;
 		}
 		// try to get more data from interleaver
@@ -2821,7 +2821,7 @@ char *listen_content(int sock, struct sourceRecord *head)
 	pthread_mutex_unlock(&prev_s->lock);
 	appendstr(&out, "<HR>");
 	appendstr(&out, clientID);
-	appendstr(&out, " &#169 Ethan Funk 2012-2015<HR></center>\n</body>\n</html>\n");
+	appendstr(&out, " &#169 Ethan Funk 2012-2020<HR></center>\n</body>\n</html>\n");
 	return out;
 }
 

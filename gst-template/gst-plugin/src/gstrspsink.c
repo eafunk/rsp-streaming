@@ -39,12 +39,11 @@
  * 
  * 	"sendto" property [comma separated ip & port address list string], 
  * 	(default <empty list>) specifies a list of comma separated ip addresses,
- * 	in either name format (to be DNS resolved), or numberic format, to which 
- * 	packets are to be sent to. For IPv4 numeric addresses, the format is standard 
- * 	doted-quad with a required colon separated port number (i.e. 127.0.0.1:5076).  
- * 	For IPv6 numeric, the format is a bracket enclosed hexidecimal IPv6 address, with
- * 	a trailing colon separated port number (i.e. [fe80::1ff:fe23:4567:890a]:5076).
- * 	DNS resolution of names trys IPv6 first, then IPv4 if IPv6 resolve failes.
+ * 	in numberic format, to which packets are to be sent to. For IPv4 numeric addresses, 
+ * 	the format is standard doted-quad with a required colon separated port number,
+ * 	i.e. 127.0.0.1:5076. For IPv6 numeric, the format is a bracket enclosed, 
+ * 	colon segmented, hexidecimal IPv6 address, with a trailing colon separated 
+ * 	port number, i.e. [fe80::1ff:fe23:4567:890a]:5076.
  * 
  * 	"ttl" property [multicast TTL decimal integer], (default 20) specifies a multicast 
  * 	packet TTL value hop count limit.
@@ -67,11 +66,11 @@
  * 	value of 96, allows 96 packets out of 255, or 37% of the packets to be lost 
  * 	in transit, on average (over an interleaver period), with out any loss of data.
  * 
- * 	"payload" property [16 through 256, in steps of 16], (default 4) specifies the 
+ * 	"payload" property [16 through 256, in steps of 16], (default 128) specifies the 
  * 	length of the payload portion of a network packet, in bytes. This is one of
  * 	two controls that set the interleaver column size in bytes.
  *
- * 	"interleave" property [1 through 85], (16 default) specifies an additional 
+ * 	"interleaving" property [1 through 85], (16 default) specifies an additional 
  * 	multiplication factor for the Payload property above to specify the interleaver 
  * 	column byte size in bytes.  For example, with the default 64 byte Payload size, 
  * 	an Interleave value of 4 would yield the column size of 256 bytes-> 4 network 
@@ -146,8 +145,8 @@ G_DEFINE_TYPE (Gstrspsink, gst_rspsink, GST_TYPE_BASE_SINK);
 #define RSP_DEFAULT_BINDIP4			NULL
 #define RSP_DEFAULT_BINDIP6			NULL
 #define RSP_DEFAULT_FEC					96
-#define RSP_DEFAULT_PAYLOAD			64
-#define RSP_DEFAULT_INTERLEAVING		4
+#define RSP_DEFAULT_PAYLOAD			128
+#define RSP_DEFAULT_INTERLEAVING		16
 #define RSP_DEFAULT_CRC					0
 #define RSP_DEFAULT_RS					0
 #define RSP_DEFAULT_KEY_FILE			NULL
@@ -234,7 +233,7 @@ static void gst_rspsink_class_init(GstrspsinkClass *klass){
 
 	g_object_class_install_property(G_OBJECT_CLASS(klass), PROP_SENDTO,
 		g_param_spec_string("sendto", "send to address:port list.",
-			"A comma separated list of address:ports, in name format (for DNS resolution), or numberic format, to which packets are to be sent. Default empty.",
+			"A comma separated list of address:ports, or [address]:port for IPv6, in numberic format, to which packets are to be sent. Default empty.",
 			RSP_DEFAULT_SENDTO, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)
 	);
 
@@ -270,13 +269,13 @@ static void gst_rspsink_class_init(GstrspsinkClass *klass){
 
 	g_object_class_install_property(G_OBJECT_CLASS(klass), PROP_PAYLOAD,
 		g_param_spec_int("payload", "Network packet payload size in bytes.",
-			"Network packet payload size in bytes, 16 through 256 in 16 byte steps. Default 64.",
+			"Network packet payload size in bytes, 16 through 256 in 16 byte steps. Default 128.",
 			16, 256, RSP_DEFAULT_PAYLOAD, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)
 	);
 
 	g_object_class_install_property(G_OBJECT_CLASS(klass), PROP_INTERLEAVING,
 		g_param_spec_int("interleaving", "Additional interleaving factor.",
-			"Specifies a multiplication factor, N, to increase data interleaving: (N x the Payload) by 255. Default 4.",
+			"Specifies a multiplication factor, N, to increase data interleaving: (N x the Payload) by 255. Default 16.",
 			1, 85, RSP_DEFAULT_INTERLEAVING, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)
 	);
 
@@ -505,13 +504,20 @@ static GstFlowReturn gst_rspsink_render(GstBaseSink *sink, GstBuffer *buffer){
 				
 				// we have a full frame... process through data RS encoder and write to interleaver row
 				if(!rspSessionWriteData(rspsink->rsp, rspsink->dataFrame, dataFrameSize + 1)){
-					
 					// no error... check for packets comming out of interleaver to send
 					while(size = rspSessionReadPacket(rspsink->rsp, &packetPtr, NULL)){
 						// travers the destinations linked list, sending the packet to each destination.
 						if(dest_ptr = rspsink->destinations){
+							int i = 0;
 							do{
+
+//		if((packetPtr[0] & 0x03) == RSP_FLAG_EXT)
+//			fprintf(stderr, "%d:blk=%d,col=%d,fec=%d,il=%d\n", i, packetPtr[3], packetPtr[4], packetPtr[1], packetPtr[2]);
+//		else
+//			fprintf(stderr, "%d:blk=%d,col=%d\n", i, packetPtr[1], packetPtr[2]);
+
 								rspSendto(dest_ptr->socket, packetPtr, size, 0, (struct sockaddr*)&dest_ptr->sock_addr);
+								i++;
 							}while(dest_ptr = dest_ptr->next);
 						}
 					}
@@ -552,8 +558,9 @@ struct sockaddr_in6 *setSockAddr(struct sockaddr_in6 *adrPtr, unsigned char ip6,
 	char *pstr, *addr;
 	unsigned short port;
 	
-	// separe address from port
+	// TODO: use resolve as a DNS lookup enable flag.  No DNS resolve implemented yet.
 	
+	// separe address from port
 	pstr = NULL;
 	if(addr = strchr(addrin, '[')){
 		// If IPv6 address is bracket enclosed, must be a number

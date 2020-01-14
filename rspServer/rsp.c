@@ -334,12 +334,13 @@ void rspSessionClear(struct rspSession *session, unsigned char close_net)
 		cJSON_Delete(session->metaQueue[session->rdQueIdx]);
 		session->rdQueIdx = (session->rdQueIdx + 1) & 0x0F;
 	}
+
 	session->wrQueIdx = 0;
 	session->rdQueIdx = 0;
 	session->repeateIndex = 0;
 	
 	session->avWrPosition = 0.0;
-    session->lastWrPos = 0.0;
+	session->lastWrPos = 0.0;
 
 	session->rdPosition = 0.0;
 	session->wrRate = -1.0;
