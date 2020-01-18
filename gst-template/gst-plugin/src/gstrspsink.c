@@ -66,15 +66,15 @@
  * 	value of 96, allows 96 packets out of 255, or 37% of the packets to be lost 
  * 	in transit, on average (over an interleaver period), with out any loss of data.
  * 
- * 	"payload" property [16 through 256, in steps of 16], (default 128) specifies the 
+ * 	"payload" property [16 through 256, in steps of 16], (default 224) specifies the 
  * 	length of the payload portion of a network packet, in bytes. This is one of
  * 	two controls that set the interleaver column size in bytes.
  *
- * 	"interleaving" property [1 through 85], (16 default) specifies an additional 
+ * 	"interleaving" property [1 through 85], (8 default) specifies an additional 
  * 	multiplication factor for the Payload property above to specify the interleaver 
- * 	column byte size in bytes.  For example, with the default 64 byte Payload size, 
- * 	an Interleave value of 4 would yield the column size of 256 bytes-> 4 network 
- * 	packets of 64 bytes sent per interleaver column.
+ * 	column byte size in bytes.  For example, with the default 224 byte Payload size, 
+ * 	an Interleave value of 8 would yield the column size of 1792 bytes-> 8 network 
+ * 	packets of 256 bytes sent per interleaver column.
  * 
  * 	"rs" property [yes/no], (default no) specifies if additional Reed-Soloman coding
  * 	is added to each network packet send. The packets size will be increase upward to
@@ -145,8 +145,8 @@ G_DEFINE_TYPE (Gstrspsink, gst_rspsink, GST_TYPE_BASE_SINK);
 #define RSP_DEFAULT_BINDIP4			NULL
 #define RSP_DEFAULT_BINDIP6			NULL
 #define RSP_DEFAULT_FEC					96
-#define RSP_DEFAULT_PAYLOAD			128
-#define RSP_DEFAULT_INTERLEAVING		16
+#define RSP_DEFAULT_PAYLOAD			224
+#define RSP_DEFAULT_INTERLEAVING		8
 #define RSP_DEFAULT_CRC					0
 #define RSP_DEFAULT_RS					0
 #define RSP_DEFAULT_KEY_FILE			NULL
@@ -269,13 +269,13 @@ static void gst_rspsink_class_init(GstrspsinkClass *klass){
 
 	g_object_class_install_property(G_OBJECT_CLASS(klass), PROP_PAYLOAD,
 		g_param_spec_int("payload", "Network packet payload size in bytes.",
-			"Network packet payload size in bytes, 16 through 256 in 16 byte steps. Default 128.",
+			"Network packet payload size in bytes, 16 through 256 in 16 byte steps. Default 224.",
 			16, 256, RSP_DEFAULT_PAYLOAD, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)
 	);
 
 	g_object_class_install_property(G_OBJECT_CLASS(klass), PROP_INTERLEAVING,
 		g_param_spec_int("interleaving", "Additional interleaving factor.",
-			"Specifies a multiplication factor, N, to increase data interleaving: (N x the Payload) by 255. Default 16.",
+			"Specifies a multiplication factor, N, to increase data interleaving: (N x the Payload) by 255. Default 8.",
 			1, 85, RSP_DEFAULT_INTERLEAVING, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)
 	);
 
@@ -350,9 +350,8 @@ void appendTagData(const GstTagList *tags, const gchar *tag, gpointer user_data)
 
 	gst_tag_list_copy_value(&val, tags, tag);
 	prop = gst_tag_get_nick(tag);
-
 	str = NULL;
-	if(!strcmp(prop, GST_TAG_EXTENDED_COMMENT)){
+	if(!strcmp(prop, GST_TAG_EXTENDED_COMMENT) || !strcmp(prop, "extended comment")){
 		// special AR specific data
 		str = gvalToString(&val);
 		if(strstr(str, "AR=") == str){
@@ -390,10 +389,14 @@ void appendTagData(const GstTagList *tags, const gchar *tag, gpointer user_data)
 
 void queueTagsToRSP(const GstTagList *tags, struct rspSession *rsp){
 	cJSON *obj, *root;
+	unsigned int mIDVal;
 	
 	root = cJSON_CreateObject();
 	obj = cJSON_CreateObject();
 	gst_tag_list_foreach(tags, appendTagData, obj);
+	srand(time(NULL));
+	while(!(mIDVal = ((unsigned int)rand() & 0xffffffff)));
+	cJSON_AddNumberToObject(obj, "mID", mIDVal);
 	cJSON_AddItemToObject(root, "item", obj);
 	rspSessionQueueMetadata(rsp, root, NULL);
 }
@@ -524,11 +527,9 @@ static GstFlowReturn gst_rspsink_render(GstBaseSink *sink, GstBuffer *buffer){
 				}
 			}
 		}
-		
 		gst_buffer_unmap(buffer, &info);
 		return GST_FLOW_OK;
 	}
-	gst_buffer_unmap(buffer, &info);
 	return GST_FLOW_ERROR;
 }
 
@@ -665,7 +666,7 @@ fail:
 	return -1;
 }
 
-struct destination *client_add(Gstrspsink *rspsink, const gchar *host){
+struct destination *client_add(Gstrspsink *rspsink, gchar *host){
 	struct destination *client;
 	struct sockaddr_in6 sockaddr;
 	gchar *tmp;
@@ -743,7 +744,7 @@ static void gst_rspsink_finalize(GObject *object){
 	rspSessionFree(rspsink->rsp);
 	
 	clients_clear(rspsink);
-		
+	
 	G_OBJECT_CLASS(rspsink)->finalize(object);
 }
 
