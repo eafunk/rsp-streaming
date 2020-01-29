@@ -256,12 +256,12 @@ static void gst_rspsrc_init (Gstrspsrc * rspsrc)
 	rspsrc->caps = RSP_DEFAULT_CAPS;
 
 
-	/* configure basesrc to be non-live source */
-	gst_base_src_set_live (GST_BASE_SRC (rspsrc), FALSE);
+	/* configure basesrc to be a live source */
+	gst_base_src_set_live(GST_BASE_SRC (rspsrc), TRUE);
 	/* make basesrc output a segment in time */
-	gst_base_src_set_format (GST_BASE_SRC (rspsrc), GST_FORMAT_BYTES);
-	/* Disable basesrc setring timestamps on outgoing buffers based on the running_time */
-	gst_base_src_set_do_timestamp (GST_BASE_SRC (rspsrc), FALSE);
+	gst_base_src_set_format(GST_BASE_SRC (rspsrc), GST_FORMAT_TIME);
+	/* Enable basesrc timestamps on outgoing buffers based on the running_time */
+	gst_base_src_set_do_timestamp(GST_BASE_SRC (rspsrc), TRUE);
 
 }
 static void

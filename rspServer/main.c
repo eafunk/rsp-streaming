@@ -2965,7 +2965,7 @@ void *shoutcastSession(void* refCon)
 					// Default uri specified: replace current uri with the specified default value
 					free(uri);
 					uri = NULL;
-					if(strcmp(cPtr->sc_default, "/") != 0)
+					if(strstr(cPtr->sc_default, "/") != cPtr->sc_default)
 						// add leading '/' to the default uri
 						appendstr(&uri, "/");
 					appendstr(&uri, cPtr->sc_default);

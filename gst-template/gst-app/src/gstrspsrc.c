@@ -115,17 +115,17 @@ G_DEFINE_TYPE (Gstrspsrc, gst_rspsrc, GST_TYPE_PUSH_SRC);
 
 enum
 {
-  PROP_0,
+	PROP_0,
 
-  PROP_SVR_TIMEOUT,
-  PROP_SEND_RAW,
-  PROP_CONF_JSON,
-  PROP_CONF_FILE,
-  PROP_STATS,
-  PROP_LOOP,
-  PROP_CAPS,
+	PROP_SVR_TIMEOUT,
+	PROP_SEND_RAW,
+	PROP_CONF_JSON,
+	PROP_CONF_FILE,
+	PROP_STATS,
+	PROP_LOOP,
+	PROP_CAPS,
 
-  PROP_LAST
+	PROP_LAST
 };
 
 static GstCaps *gst_rspsrc_getcaps (GstBaseSrc * src, GstCaps * filter);
@@ -139,32 +139,32 @@ void gst_rspsrc_convertContentsData (GstBaseSrc * bsrc, cJSON *contents);
 static void gst_rspsrc_finalize (GObject * object);
 
 static void gst_rspsrc_set_property (GObject * object, guint prop_id,
-    const GValue * value, GParamSpec * pspec);
+											const GValue * value, GParamSpec * pspec);
 static void gst_rspsrc_get_property (GObject * object, guint prop_id,
-    GValue * value, GParamSpec * pspec);
+													GValue * value, GParamSpec * pspec);
 
 static GstStateChangeReturn gst_rspsrc_change_state (GstElement * element,
-    GstStateChange transition);
+																	GstStateChange transition);
 
 static GstStructure *gst_rspsrc_create_stats(struct rspSession *rsp);
 
 gboolean rspsrcplugin_init(GstPlugin *plugin)
 {
-  if(!gst_element_register(plugin, "rspsrc", GST_RANK_NONE,  GST_TYPE_rspsrc))
-    return FALSE;
-  return TRUE;
+	if(!gst_element_register(plugin, "rspsrc", GST_RANK_NONE,  GST_TYPE_rspsrc))
+		return FALSE;
+	return TRUE;
 }
 
 GST_PLUGIN_DEFINE (
-    GST_VERSION_MAJOR,
-    GST_VERSION_MINOR,
-    rspsrc,
-    "Receive data via RSP protocol",
-    rspsrcplugin_init,
-    "0.8",
-    "LGPL",
-    PACKAGE_NAME,
-    "http://redmountainradio.com/rsp"
+	GST_VERSION_MAJOR,
+	GST_VERSION_MINOR,
+	rspsrc,
+	"Receive data via RSP protocol",
+	rspsrcplugin_init,
+	"0.8",
+	"LGPL",
+	PACKAGE_NAME,
+	"http://redmountainradio.com/rsp"
 )
 
 static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE ("src",
@@ -174,26 +174,26 @@ static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE ("src",
 
 static void gst_rspsrc_class_init (GstrspsrcClass * klass)
 {
-  GObjectClass *gobject_class;
-  GstElementClass *gstelement_class;
-  GstBaseSrcClass *gstbasesrc_class;
-  GstPushSrcClass *gstpushsrc_class;
+	GObjectClass *gobject_class;
+	GstElementClass *gstelement_class;
+	GstBaseSrcClass *gstbasesrc_class;
+	GstPushSrcClass *gstpushsrc_class;
+	
+	gobject_class = (GObjectClass *) klass;
+	gstelement_class = (GstElementClass *) klass;
+	gstbasesrc_class = (GstBaseSrcClass *) klass;
+	gstpushsrc_class = (GstPushSrcClass *) klass;
+	
+	GST_DEBUG_CATEGORY_INIT (rspsrc_debug, "rspsrc", 0, "RSP stream source");
+	
+	gobject_class->set_property = gst_rspsrc_set_property;
+	gobject_class->get_property = gst_rspsrc_get_property;
+	gobject_class->finalize = gst_rspsrc_finalize;
+	
+	gst_element_class_add_pad_template (gstelement_class,
+					gst_static_pad_template_get (&src_template));
 
-  gobject_class = (GObjectClass *) klass;
-  gstelement_class = (GstElementClass *) klass;
-  gstbasesrc_class = (GstBaseSrcClass *) klass;
-  gstpushsrc_class = (GstPushSrcClass *) klass;
-
-  GST_DEBUG_CATEGORY_INIT (rspsrc_debug, "rspsrc", 0, "RSP stream source");
-
-  gobject_class->set_property = gst_rspsrc_set_property;
-  gobject_class->get_property = gst_rspsrc_get_property;
-  gobject_class->finalize = gst_rspsrc_finalize;
-
-  gst_element_class_add_pad_template (gstelement_class,
-      gst_static_pad_template_get (&src_template));
-
-  g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_SVR_TIMEOUT,
+	g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_SVR_TIMEOUT,
 	g_param_spec_int ("svr-timeout", "server timeout",
 		"Time, in seconds, to wait for a streaming server response before moving to the next DNS entry or server in a list.",
 		0, G_MAXUINT16, RSP_DEFAULT_SVR_TIMEOUT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
@@ -203,7 +203,7 @@ static void gst_rspsrc_class_init (GstrspsrcClass * klass)
 		"Send raw, jSON formated RSP meta-data down stream as an GST_TAG_EXTENDED_COMMENT taged with key of 'rsp-meta'",
 		RSP_DEFAULT_SEND_RAW, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
-  g_object_class_install_property (gobject_class, PROP_CONF_JSON,
+	g_object_class_install_property (gobject_class, PROP_CONF_JSON,
 	g_param_spec_string ("config-json", "config string",
 		"An RSP session configuration string, in jSON format. Either this property or config-file are required to start an RSP session.",
 		RSP_DEFAULT_CONF_JSON, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
@@ -213,33 +213,33 @@ static void gst_rspsrc_class_init (GstrspsrcClass * klass)
 		"An RSP session configuration file, in jSON format. Either this property or config-json are required to start an RSP session.",
 		RSP_DEFAULT_CONF_FILE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
-  g_object_class_install_property (gobject_class, PROP_STATS,
+	g_object_class_install_property (gobject_class, PROP_STATS,
 	g_param_spec_boxed ("stats", "Statistics",
 		"Various RSP related statistics", GST_TYPE_STRUCTURE,
 		G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
 
-  g_object_class_install_property (gobject_class, PROP_LOOP,
+	g_object_class_install_property (gobject_class, PROP_LOOP,
 	g_param_spec_boolean ("loop", "loop",
 		"If false (default), will stop after last stream list item has been played, otherwise will loop back to the first stream list entry.",
 		FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
-  g_object_class_install_property (gobject_class, PROP_CAPS,
+	g_object_class_install_property (gobject_class, PROP_CAPS,
 	g_param_spec_boxed ("caps", "Caps",
 		"The caps of the source pad", GST_TYPE_CAPS,
 		G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
-  gst_element_class_add_pad_template (gstelement_class,
-      gst_static_pad_template_get (&src_template));
+	gst_element_class_add_pad_template (gstelement_class,
+					gst_static_pad_template_get (&src_template));
 
-  gst_element_class_set_static_metadata (gstelement_class,
-      "RSP packet receiver", "Source/Network",
-      "Receive streaming data over a network via RSP protocol - http://redmountainradio.com/rsp",
-      "Ethan Funk <ethan@redmountainradio.com>");
+	gst_element_class_set_static_metadata (gstelement_class,
+		"RSP packet receiver", "Source/Network",
+		"Receive streaming data over a network via RSP protocol - http://redmountainradio.com/rsp",
+		"Ethan Funk <ethan@redmountainradio.com>");
 
-  gstelement_class->change_state = gst_rspsrc_change_state;
-  gstbasesrc_class->unlock = gst_rspsrc_unlock;
-  gstbasesrc_class->get_caps = gst_rspsrc_getcaps;
-  gstpushsrc_class->create = gst_rspsrc_create;
+	gstelement_class->change_state = gst_rspsrc_change_state;
+	gstbasesrc_class->unlock = gst_rspsrc_unlock;
+	gstbasesrc_class->get_caps = gst_rspsrc_getcaps;
+	gstpushsrc_class->create = gst_rspsrc_create;
 }
 
 static void gst_rspsrc_init (Gstrspsrc * rspsrc)
@@ -256,26 +256,26 @@ static void gst_rspsrc_init (Gstrspsrc * rspsrc)
 	rspsrc->caps = RSP_DEFAULT_CAPS;
 
 
-	/* configure basesrc to be non-live source */
-	gst_base_src_set_live (GST_BASE_SRC (rspsrc), FALSE);
+	/* configure basesrc to be a live source */
+	gst_base_src_set_live(GST_BASE_SRC (rspsrc), TRUE);
 	/* make basesrc output a segment in time */
-	gst_base_src_set_format (GST_BASE_SRC (rspsrc), GST_FORMAT_BYTES);
-	/* Disable basesrc setring timestamps on outgoing buffers based on the running_time */
-	gst_base_src_set_do_timestamp (GST_BASE_SRC (rspsrc), FALSE);
+	gst_base_src_set_format(GST_BASE_SRC (rspsrc), GST_FORMAT_TIME);
+	/* Enable basesrc timestamps on outgoing buffers based on the running_time */
+	gst_base_src_set_do_timestamp(GST_BASE_SRC (rspsrc), TRUE);
 
 }
 static void
 gst_rspsrc_finalize (GObject * object)
 {
-  Gstrspsrc *rspsrc;
+	Gstrspsrc *rspsrc;
 
-  rspsrc = GST_rspsrc (object);
+	rspsrc = GST_rspsrc (object);
 
-  if(rspsrc->caps)
-    	gst_caps_unref(rspsrc->caps);
-  rspsrc->caps = RSP_DEFAULT_CAPS;
+	if(rspsrc->caps)
+		gst_caps_unref(rspsrc->caps);
+	rspsrc->caps = RSP_DEFAULT_CAPS;
 
-  G_OBJECT_CLASS (rspsrc)->finalize (object);
+	G_OBJECT_CLASS (rspsrc)->finalize (object);
 }
 
 static GstCaps * gst_rspsrc_getcaps (GstBaseSrc * src, GstCaps * filter)
@@ -305,16 +305,16 @@ static GstCaps * gst_rspsrc_getcaps (GstBaseSrc * src, GstCaps * filter)
 
 static gboolean gst_rspsrc_send_app_message(Gstrspsrc *rspsrc, gchar *name, gchar *value)
 {
-    GstMessage *msg;
+	GstMessage *msg;
 	GstStructure* data;
-    GstBus* bus;
+		GstBus* bus;
 
-    if(bus = gst_element_get_bus(GST_ELEMENT(rspsrc))){
-        data = gst_structure_new("rsp-message", name, G_TYPE_STRING, value, NULL);
-        msg = gst_message_new_application(rspsrc, data);
-        return gst_bus_post(bus, msg);
-    }
-    return 0;
+	if(bus = gst_element_get_bus(GST_ELEMENT(rspsrc))){
+		data = gst_structure_new("rsp-message", name, G_TYPE_STRING, value, NULL);
+		msg = gst_message_new_application(rspsrc, data);
+		return gst_bus_post(bus, msg);
+	}
+	return 0;
 }
 
 static gboolean gst_rspsrc_send_tag_event(Gstrspsrc *rspsrc, GstTagList * tags)
@@ -326,7 +326,7 @@ static gboolean gst_rspsrc_send_tag_event(Gstrspsrc *rspsrc, GstTagList * tags)
 		return FALSE;
 	}
 	event = gst_event_new_tag(tags);
-    GST_EVENT_TIMESTAMP(event) = 0;
+	GST_EVENT_TIMESTAMP(event) = 0;
 	return gst_pad_push_event(GST_BASE_SRC_PAD (rspsrc), event);
 }
 
@@ -342,7 +342,7 @@ void gst_rspsrc_convertContentsData(GstBaseSrc * bsrc, cJSON *contents)
 	if((item = cJSON_GetObjectItem(contents, "Type")) && item->valuestring && (strlen(item->valuestring))){
 		typestr = item->valuestring;
 
-        /* Handle old rsp/shoutcast Types */
+		/* Handle old rsp/shoutcast Types */
 		if(strcasecmp(typestr, "audio/aac") == 0){
 			outcaps = gst_caps_new_empty_simple("audio/mpeg");
 			gst_caps_set_simple(outcaps, "mpegversion", G_TYPE_INT, 2, NULL);
@@ -356,47 +356,47 @@ void gst_rspsrc_convertContentsData(GstBaseSrc * bsrc, cJSON *contents)
 			gst_caps_set_simple(outcaps, "mpegversion", G_TYPE_INT, 1, NULL);
 			gst_caps_set_simple(outcaps, "layer", G_TYPE_INT, 3, NULL);
 		}else if(strcasecmp(typestr, "audio/mpeg") == 0){
-            outcaps = gst_caps_new_empty_simple("audio/mpeg");
-            /* This may be an old rsp/shoutcast Type, or a gst type... if old rsp/shoutcast, handle accordingly */
-            if(cJSON_GetObjectItem(contents, "mpegversion") == NULL){
-                /* old rsp/shoutcast type: set up layer and mpegversion properties */
-                gst_caps_set_simple(outcaps, "mpegversion", G_TYPE_INT, 1, NULL);
-                gst_caps_set_simple(outcaps, "layer", G_TYPE_INT, 3, NULL);
-            }
+			outcaps = gst_caps_new_empty_simple("audio/mpeg");
+			/* This may be an old rsp/shoutcast Type, or a gst type... if old rsp/shoutcast, handle accordingly */
+			if(cJSON_GetObjectItem(contents, "mpegversion") == NULL){
+				/* old rsp/shoutcast type: set up layer and mpegversion properties */
+				gst_caps_set_simple(outcaps, "mpegversion", G_TYPE_INT, 1, NULL);
+				gst_caps_set_simple(outcaps, "layer", G_TYPE_INT, 3, NULL);
+			}
 		}else
 			outcaps = gst_caps_new_empty_simple(typestr);
 
-        count =	cJSON_GetArraySize(contents);
-        for(i=1; i<=count; i++){
-            if(item = cJSON_GetArrayItem(contents, i)){
-                /* Ignore the Type & mID properties, we already handled Type above, and mID is of no interest */
-                if((tagstr = item->string) && (strcmp(tagstr, "Type")) && (strcmp(tagstr, "mID"))){
-                    /* convert legacy rsp propertys to gstreamer values */
-                    if(strcmp(tagstr, "SampleRate") == 0)
-                        tagstr = "rate";
-                    else if(strcmp(tagstr, "Channels") == 0)
-                        tagstr = "channels";
-                    else if(strcmp(tagstr, "kBitRate") == 0){
-                        tagstr = "bitrate";
-                        item->valueint = item->valueint * 1024;
-                    }
-                    /* pass properties through */
-                    if(item->type==cJSON_Number)
-                        gst_caps_set_simple(outcaps, tagstr, G_TYPE_INT, item->valueint, NULL);
-                    else if(item->type==cJSON_String)
-                        gst_caps_set_simple(outcaps, tagstr, G_TYPE_STRING, item->valuestring, NULL);
-                }
+		count =	cJSON_GetArraySize(contents);
+		for(i=1; i<=count; i++){
+			if(item = cJSON_GetArrayItem(contents, i)){
+				/* Ignore the Type & mID properties, we already handled Type above, and mID is of no interest */
+				if((tagstr = item->string) && (strcmp(tagstr, "Type")) && (strcmp(tagstr, "mID"))){
+					/* convert legacy rsp propertys to gstreamer values */
+					if(strcmp(tagstr, "SampleRate") == 0)
+						tagstr = "rate";
+					else if(strcmp(tagstr, "Channels") == 0)
+						tagstr = "channels";
+					else if(strcmp(tagstr, "kBitRate") == 0){
+						tagstr = "bitrate";
+						item->valueint = item->valueint * 1024;
+					}
+					/* pass properties through */
+					if(item->type==cJSON_Number)
+						gst_caps_set_simple(outcaps, tagstr, G_TYPE_INT, item->valueint, NULL);
+					else if(item->type==cJSON_String)
+						gst_caps_set_simple(outcaps, tagstr, G_TYPE_STRING, item->valuestring, NULL);
+				}
 			}
 		}
 
 		if(outcaps){
 			if(gst_pad_set_caps(bsrc->srcpad, outcaps)){
-                GValue value;
-                g_value_init(&value, GST_TYPE_CAPS);
-                gst_value_set_caps(&value, outcaps);
-                gst_rspsrc_set_property(bsrc, PROP_CAPS, &value, NULL);
-            }
-            gst_caps_unref(outcaps);
+				GValue value;
+				g_value_init(&value, GST_TYPE_CAPS);
+				gst_value_set_caps(&value, outcaps);
+				gst_rspsrc_set_property(bsrc, PROP_CAPS, &value, NULL);
+			}
+			gst_caps_unref(outcaps);
 		}
 	}
 }
@@ -408,8 +408,6 @@ static GstFlowReturn gst_rspsrc_create (GstPushSrc * psrc, GstBuffer ** buf)
 	GstFlowReturn ret;
 	GstMapInfo info;
 	GstTagList *tags;
-    	GstMessage *gsmsg;
-    	GstBus* bus;
 	cJSON *meta;
 	cJSON *item;
 	cJSON *prop;
@@ -459,27 +457,27 @@ static GstFlowReturn gst_rspsrc_create (GstPushSrc * psrc, GstBuffer ** buf)
 					// no more entries to try
 					rspsrc->state = 0;
 					GST_OBJECT_UNLOCK(rspsrc);
-                			gst_rspsrc_send_app_message(rspsrc, "status", "end of stream-list");
+					gst_rspsrc_send_app_message(rspsrc, "status", "end of stream-list");
 					GST_OBJECT_LOCK(rspsrc);
-                			break;
+					break;
 				}
 			}
 
 			rspSessionClear(rspsrc->rsp, TRUE);
 			rspsrc->state = 3;			/* next entry loaded: set run state to "next network" */
 			GST_OBJECT_UNLOCK(rspsrc);
-            		gst_rspsrc_send_app_message(rspsrc, "status", "loading next stream");
-            		GST_OBJECT_LOCK(rspsrc);
+			gst_rspsrc_send_app_message(rspsrc, "status", "loading next stream");
+			GST_OBJECT_LOCK(rspsrc);
 
 			if(err != RSP_ERROR_NONE){
 				// A problem with the current rspStream list entry... try another
 				continue;
-            		}
+			}
 		}
 		if(rspsrc->state == 3){
-           		GST_OBJECT_UNLOCK(rspsrc);
-            		gst_rspsrc_send_app_message(rspsrc, "status", "trying next address");
-            		GST_OBJECT_LOCK(rspsrc);
+			GST_OBJECT_UNLOCK(rspsrc);
+			gst_rspsrc_send_app_message(rspsrc, "status", "trying next address");
+			GST_OBJECT_LOCK(rspsrc);
 
 			if(rspSessionNextNetworkSetup(rspsrc->rsp, rspsrc->rsp->timeout, NULL) != RSP_ERROR_NONE){
 				// no more network records to try
@@ -490,10 +488,10 @@ static GstFlowReturn gst_rspsrc_create (GstPushSrc * psrc, GstBuffer ** buf)
 			if(rspPacketRecvrRequestSend(rspsrc->rsp, NULL, TRUE) != RSP_ERROR_NONE)
 				continue;
 			rspsrc->state = 4;			/* next network loaded: set run state to "discover format" */
-            		GST_OBJECT_UNLOCK(rspsrc);
-            		gst_rspsrc_send_app_message(rspsrc, "status", "discovering format");
+			GST_OBJECT_UNLOCK(rspsrc);
+			gst_rspsrc_send_app_message(rspsrc, "status", "discovering format");
 		}else
-            		GST_OBJECT_UNLOCK(rspsrc);
+			GST_OBJECT_UNLOCK(rspsrc);
 		// if we get here, we are in discover, buffer or play run state
 		size = rspSessionPlayTaskPush(rspsrc->rsp, &msg, &meta, &data, (rspsrc->state == 6 ? 0 : 1), 0.0);
 		GST_OBJECT_LOCK(rspsrc);
@@ -507,20 +505,15 @@ static GstFlowReturn gst_rspsrc_create (GstPushSrc * psrc, GstBuffer ** buf)
 		if((rspsrc->state == 4) && rspsrc->rsp->interleaver){
 			rspsrc->state = 5;	/* format discovered: set run state to "buffering" */
 			GST_OBJECT_UNLOCK(rspsrc);
-            		gst_rspsrc_send_app_message(rspsrc, "status", "buffering");
-/*    			if(bus = gst_element_get_bus(GST_ELEMENT(rspsrc))){
-        			gsmsg = gst_message_new_buffering (rspsrc, 0);
-        			gst_bus_post(bus, gsmsg);
-    			}
-*/
-            		GST_OBJECT_LOCK(rspsrc);
+			gst_rspsrc_send_app_message(rspsrc, "status", "buffering");
+			GST_OBJECT_LOCK(rspsrc);
 		}
 		if((rspsrc->state > 4) && !rspsrc->rsp->interleaver){
 			rspsrc->state = 4;	/* format has changed: set run state to "discovering format" */
 			GST_OBJECT_UNLOCK(rspsrc);
-            		gst_rspsrc_send_app_message(rspsrc, "status", "format changed, re-discovering");
+			gst_rspsrc_send_app_message(rspsrc, "status", "format changed, re-discovering");
 		}else
-           		 GST_OBJECT_UNLOCK(rspsrc);
+			GST_OBJECT_UNLOCK(rspsrc);
 
 		if(meta){
 			/* handle new meta data */
@@ -540,8 +533,26 @@ static GstFlowReturn gst_rspsrc_create (GstPushSrc * psrc, GstBuffer ** buf)
 
 			/* see if this is track "item." If so, reformat as gStreamer tag Artist, Title, etc., tags */
 			if((item = cJSON_GetObjectItem(meta, "Item")) || (item = cJSON_GetObjectItem(meta, "item"))){
-				// set Artist, Album and Title properties
+				// set Artist, Album, Title, etc. properties
 				tags = gst_tag_list_new_empty();
+				// look for entires that are lists, not values
+				if(prop = item->child){
+					char *metaStr;
+					char *strVal;
+					do{
+						if(prop->child && prop->string){
+							if(metaStr = cJSON_PrintUnformatted(prop)){
+								strVal = NULL;
+								appendstr(&strVal, prop->string);
+								appendstr(&strVal, "=");
+								appendstr(&strVal, metaStr);
+								free(metaStr);
+								gst_tag_list_add(tags, GST_TAG_MERGE_REPLACE, GST_TAG_EXTENDED_COMMENT, strVal, NULL);
+								free(strVal);
+							}
+						}
+					}while(prop = prop->next);
+				}
 
 				sVal = "[None]";
 				if(prop = cJSON_GetObjectItem(item, "Artist")){
@@ -564,6 +575,19 @@ static GstFlowReturn gst_rspsrc_create (GstPushSrc * psrc, GstBuffer ** buf)
 				}
 				gst_tag_list_add(tags, GST_TAG_MERGE_REPLACE, GST_TAG_ALBUM, sVal, NULL);
 
+				if(prop = cJSON_GetObjectItem(item, "Track")){
+					char tmp[32];
+					snprintf(tmp, sizeof(tmp), "%d", prop->valueint);
+					gst_tag_list_add(tags, GST_TAG_MERGE_REPLACE, GST_TAG_TRACK_NUMBER, tmp, NULL);
+				}
+
+				if(prop = cJSON_GetObjectItem(item, "ISRC")){
+					if(prop->valuestring && (strlen(prop->valuestring))){
+						sVal = prop->valuestring;
+						gst_tag_list_add(tags, GST_TAG_MERGE_REPLACE, GST_TAG_ISRC, sVal, NULL);
+					}
+				}
+				
 				gst_rspsrc_send_tag_event(rspsrc, tags);
 			}
 
@@ -587,11 +611,6 @@ static GstFlowReturn gst_rspsrc_create (GstPushSrc * psrc, GstBuffer ** buf)
 				rspsrc->state = 5;	/* break in stream: set run state to "buffering" */
 				GST_OBJECT_UNLOCK(rspsrc);
                 		gst_rspsrc_send_app_message(rspsrc, "status", "buffering");
-/*    				if(bus = gst_element_get_bus(GST_ELEMENT(rspsrc))){
-        				gsmsg = gst_message_new_buffering (rspsrc, 0);
-        				gst_bus_post(bus, gsmsg);
-    				}
-*/
 			}else
 				GST_OBJECT_UNLOCK(rspsrc);
 		}
@@ -615,11 +634,6 @@ static GstFlowReturn gst_rspsrc_create (GstPushSrc * psrc, GstBuffer ** buf)
 					rspsrc->state = 6;	/* stream playing: set run state to "playing" */
 					GST_OBJECT_UNLOCK(rspsrc);
                    			gst_rspsrc_send_app_message(rspsrc, "status", "playing");
-/*    					if(bus = gst_element_get_bus(GST_ELEMENT(rspsrc))){
-        					gsmsg = gst_message_new_buffering (rspsrc, 100);
-        					gst_bus_post(bus, gsmsg);
-    					}
-*/
 				}else
                    			 GST_OBJECT_UNLOCK(rspsrc);
 			}else
@@ -796,7 +810,7 @@ static gboolean gst_rspsrc_open (Gstrspsrc * src)
 	src->current = src->rspSection;
 	// set run state to load-next
 	src->state = 2;
-    gst_rspsrc_send_app_message(src, "status", "source configured");
+	gst_rspsrc_send_app_message(src, "status", "source configured");
 	return TRUE;
 }
 
@@ -832,37 +846,37 @@ static gboolean gst_rspsrc_close (Gstrspsrc * src)
 
 static GstStateChangeReturn gst_rspsrc_change_state (GstElement * element, GstStateChange transition)
 {
-  Gstrspsrc *src;
-  GstStateChangeReturn result;
+	Gstrspsrc *src;
+	GstStateChangeReturn result;
 
-  src = GST_rspsrc (element);
+	src = GST_rspsrc (element);
 
-  switch (transition) {
-    case GST_STATE_CHANGE_NULL_TO_READY:
-		  if(!gst_rspsrc_open(src))
-			  goto open_failed;
-		  break;
-    case GST_STATE_CHANGE_READY_TO_NULL:
-		  gst_rspsrc_close(src);
-		  break;
-    default:
-		  break;
-  }
+	switch (transition) {
+		case GST_STATE_CHANGE_NULL_TO_READY:
+			if(!gst_rspsrc_open(src))
+				goto open_failed;
+			break;
+		case GST_STATE_CHANGE_READY_TO_NULL:
+			gst_rspsrc_close(src);
+			break;
+		default:
+			break;
+	}
 
-  if((result = GST_ELEMENT_CLASS(parent_class)->change_state (element, transition)) == GST_STATE_CHANGE_FAILURE)
-	goto failure;
-  return result;
-  /* ERRORS */
+	if((result = GST_ELEMENT_CLASS(parent_class)->change_state (element, transition)) == GST_STATE_CHANGE_FAILURE)
+		goto failure;
+	return result;
+	/* ERRORS */
 open_failed:
-  {
-    GST_DEBUG_OBJECT (src, "failed to load RSP configuration");
-    return GST_STATE_CHANGE_FAILURE;
-  }
+	{
+		GST_DEBUG_OBJECT (src, "failed to load RSP configuration");
+		return GST_STATE_CHANGE_FAILURE;
+	}
 failure:
-  {
-    GST_DEBUG_OBJECT (src, "parent failed state change");
-    return result;
-  }
+	{
+		GST_DEBUG_OBJECT (src, "parent failed state change");
+		return result;
+	}
 }
 
 static GstStructure * gst_rspsrc_create_stats(struct rspSession *rsp)

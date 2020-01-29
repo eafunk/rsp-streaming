@@ -172,8 +172,9 @@ enum
 	PROP_LAST
 };
 
-static void gst_rspsink_finalize(GObject * object);
-static GstFlowReturn gst_rspsink_render(GstBaseSink *sink, GstBuffer * buffer);
+static void gst_rspsink_finalize(GObject *object);
+static GstFlowReturn gst_rspsink_render(GstBaseSink *sink, GstBuffer *buffer);
+static GstFlowReturn gst_rspsinkrender_list(GstBaseSink *sink, GstBufferList *buffer_list);
 static gboolean gst_rspsink_event(GstBaseSink *sink, GstEvent *event);
 static gboolean gst_rspsink_setcaps(GstBaseSink *sink, GstCaps *caps);
 static gboolean gst_rspsink_start(GstBaseSink *sink);
@@ -224,6 +225,7 @@ static void gst_rspsink_class_init(GstrspsinkClass *klass){
 	gstbasesink_class->event = gst_rspsink_event; // Handle TAGS
 	gstbasesink_class->set_caps = gst_rspsink_setcaps;
 	gstbasesink_class->render = gst_rspsink_render;
+	gstbasesink_class->render_list = gst_rspsinkrender_list;
 	gstbasesink_class->start = gst_rspsink_start;
 	gstbasesink_class->stop = gst_rspsink_stop;
 	gstbasesink_class->unlock = gst_rspsink_unlock;
@@ -474,16 +476,16 @@ static GstFlowReturn gst_rspsink_render(GstBaseSink *sink, GstBuffer *buffer){
 		tmp_ptr = info.data;
 		n = info.size;
 		while(n > 0){
-			// NOTE: First byte of frame is meta data, followed by payload data
+			// NOTE: First byte of RSP frame is meta data, followed by payload data
 			dataFrameSize = 255 - rspsink->rsp->FECroots - 1;
-			if(n < (signed int)(dataFrameSize - rspsink->frag_offset)){	// note 1 extra byte reserved for meta data stream
+			if(n < (signed int)(dataFrameSize - rspsink->frag_offset)){
 				// less than a full RSP row frame, save fragment for next time render is called
 				memcpy(rspsink->dataFrame + rspsink->frag_offset + 1, tmp_ptr, n);
 				rspsink->frag_offset = rspsink->frag_offset + n;
 				n = 0;
 			}else{
 				// enough to fill a frame
-				size = dataFrameSize - rspsink->frag_offset;					// note 1 extra byte reserved for meta data stream
+				size = dataFrameSize - rspsink->frag_offset;
 				memcpy(rspsink->dataFrame + rspsink->frag_offset + 1, tmp_ptr, size);
 				rspsink->frag_offset = 0;
 				n = n - size;
@@ -531,6 +533,24 @@ static GstFlowReturn gst_rspsink_render(GstBaseSink *sink, GstBuffer *buffer){
 		return GST_FLOW_OK;
 	}
 	return GST_FLOW_ERROR;
+}
+
+static GstFlowReturn gst_rspsinkrender_list(GstBaseSink *sink, GstBufferList *buffer_list){
+	GstBuffer *buffer;
+	GstFlowReturn flow;
+	guint count, i;
+	
+	count = gst_buffer_list_length(buffer_list);
+	if(count == 0)
+		return GST_FLOW_OK;
+
+	for(i = 0; i < count; i++){
+		buffer = gst_buffer_list_get(buffer_list, i);
+		flow = gst_rspsink_render(sink, buffer);
+		if(flow == GST_FLOW_ERROR)
+			break;
+	}
+  return flow;
 }
 
 void clients_clear(Gstrspsink *rspsink){
