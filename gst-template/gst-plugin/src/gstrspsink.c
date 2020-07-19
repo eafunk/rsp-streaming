@@ -318,6 +318,8 @@ static void gst_rspsink_init(Gstrspsink *rspsink){
 	rspsink->frag_offset = 0;
 	rspsink->curMetaStr = NULL;
 	rspsink->metaPos = 0;
+	
+	rspsink->lastList = NULL;
 
 	rspsink->prop_sendto = RSP_DEFAULT_SENDTO;
 	rspsink->prop_ttl = RSP_DEFAULT_TTL;
@@ -342,7 +344,7 @@ gchar *gvalToString(GValue *val){
 	return str;
 }
 
-void appendTagData(const GstTagList *tags, const gchar *tag, gpointer user_data){
+cJSON *appendTagData(GstTagList *tags, const gchar *tag, gpointer user_data){
 	cJSON *obj = (cJSON *)user_data;
 	cJSON *ar;
 	GValue val = { 0, };
@@ -359,9 +361,12 @@ void appendTagData(const GstTagList *tags, const gchar *tag, gpointer user_data)
 		if(strstr(str, "AR=") == str){
 			if(ar = cJSON_Parse(str+3))
 				cJSON_AddItemToObject(obj, "AR", ar);
-		}else{
-			g_free(str);
-			str = NULL;
+		}else if(strstr(str, "rsp-meta=") == str){
+			if(ar = cJSON_Parse(str+9)){
+				g_free(str);
+				g_value_unset(&val);
+				return ar;
+			}
 		}
 	}else if(!strcmp(prop, GST_TAG_TITLE)){
 		str = gvalToString(&val);
@@ -384,23 +389,47 @@ void appendTagData(const GstTagList *tags, const gchar *tag, gpointer user_data)
 		cJSON_AddStringToObject(obj, "ISRC", str);
 	}
 	if(str)
-		g_free(str);	
-
+		g_free(str);
 	g_value_unset(&val);
+	return NULL;
 }
 
-void queueTagsToRSP(const GstTagList *tags, struct rspSession *rsp){
-	cJSON *obj, *root;
+void queueTagsToRSP(GstTagList *tags, Gstrspsink *rspsink){
+	gint count, i;
+	const gchar *tag;
+	cJSON *obj, *root, *cust;
 	unsigned int mIDVal;
 	
-	root = cJSON_CreateObject();
+	if(rspsink->lastList && gst_tag_list_is_equal(rspsink->lastList, tags))
+		// same as last list, no nothing
+		return;
+		
+	if(rspsink->lastList)
+		gst_tag_list_unref(rspsink->lastList);
+	rspsink->lastList = gst_tag_list_ref(tags);
+
 	obj = cJSON_CreateObject();
-	gst_tag_list_foreach(tags, appendTagData, obj);
-	srand(time(NULL));
-	while(!(mIDVal = ((unsigned int)rand() & 0xffffffff)));
-	cJSON_AddNumberToObject(obj, "mID", mIDVal);
-	cJSON_AddItemToObject(root, "item", obj);
-	rspSessionQueueMetadata(rsp, root, NULL);
+	count = gst_tag_list_n_tags(tags);
+	for(i=0; i<count; i++){
+		tag = gst_tag_list_nth_tag_name(tags, i);
+		if(cust = appendTagData(tags, tag, obj)){
+			// handle any rsp-meta specific info, such as stream cluster info
+			rspSessionQueueMetadata(rspsink->rsp, cust, NULL);
+		}
+	}
+
+	if(cJSON_GetArraySize(obj)){
+		// if there is anything left after pulling out rsp-meta specific stuff,
+		// treat it as track info, "item" in rsp nomenclature.
+		root = cJSON_CreateObject();
+		srand(time(NULL));
+		while(!(mIDVal = ((unsigned int)rand() & 0xffffffff)));
+		cJSON_AddNumberToObject(obj, "mID", mIDVal);
+		cJSON_AddItemToObject(root, "item", obj);
+		rspSessionQueueMetadata(rspsink->rsp, root, NULL);
+	}else{
+		cJSON_Delete(obj);
+	}
 }
 
 static gboolean gst_rspsink_event(GstBaseSink *sink, GstEvent *event){
@@ -410,7 +439,7 @@ static gboolean gst_rspsink_event(GstBaseSink *sink, GstEvent *event){
 	switch(GST_EVENT_TYPE(event)){
 		case GST_EVENT_TAG:
 			gst_event_parse_tag(event, &list);
-			queueTagsToRSP(list, rspsink->rsp);
+			queueTagsToRSP(list, rspsink);
 			break;
 			
 		default:
@@ -761,6 +790,9 @@ static void gst_rspsink_finalize(GObject *object){
 	if(rspsink->prop_key_pw)
 		free(rspsink->prop_key_pw);
 	
+	if(rspsink->lastList)
+		gst_tag_list_unref(rspsink->lastList);
+		
 	rspSessionFree(rspsink->rsp);
 	
 	clients_clear(rspsink);
@@ -813,7 +845,9 @@ static gboolean gst_rspsink_stop(GstBaseSink *sink){
 
 	gst_rspsink_unlock(sink);
 	rspSessionClear(rspsink->rsp, TRUE);
-	
+	if(rspsink->lastList)
+		gst_tag_list_unref(rspsink->lastList);
+	rspsink->lastList = NULL;
 	return TRUE;
 }
 

@@ -2958,7 +2958,6 @@ void *shoutcastSession(void* refCon)
 		if(raw_uri && httpv && ((strcasecmp(httpv, "HTTP/1.1") == 0) || (strcasecmp(httpv, "HTTP/1.0") == 0)) ){
 			// uri, if not NULL after this call, needs to be freed when your done with it.
 			uri = decodeURI(raw_uri);
-			
 			if((strcmp(uri, "/streamlist") == 0) || (strcmp(uri, "/") == 0)){
 				pthread_mutex_lock(&cPtr->lock);
 				if((strcmp(uri, "/") == 0) && cPtr->sc_default){

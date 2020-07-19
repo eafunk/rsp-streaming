@@ -1878,7 +1878,7 @@ void rspSessionQueueMetadata(struct rspSession *session, cJSON *meta, cJSON *exc
 				}
 				if(e)
 					continue;
-				// if we get here, then the tag string doesn't match any of the string items in the exclude list.				
+				// if we get here, then the tag string doesn't match any of the string items in the exclude list.
 			}
 			mID = 0;
 			// check if this is a repeat item (non-zero mID) then check make sure we don't already have it in the repeat record
