@@ -128,6 +128,7 @@
 #endif
 
 #include "gstrspsink.h"
+#include <wordexp.h>
 
 #ifdef HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
@@ -804,12 +805,12 @@ static gboolean gst_rspsink_start(GstBaseSink *sink){
 	Gstrspsink *rspsink = GST_rspsink(sink);
 	gchar **clients;
 	gint i;
+	unsigned char rspErr;
 
 	if(rspsink->prop_sendto == NULL){
 		GST_ERROR_OBJECT(rspsink, "Failed: sendto destination property is empty.");
 		return FALSE;
 	}
-	
 	rspSessionClear(rspsink->rsp, TRUE);
 	
 	rspsink->rsp->FECroots = rspsink->prop_fec;
@@ -820,6 +821,25 @@ static gboolean gst_rspsink_start(GstBaseSink *sink){
 		rspsink->rsp->flags = rspsink->rsp->flags | RSP_FLAG_CRC;
 	if(rspsink->prop_rs)
 		rspsink->rsp->flags = rspsink->rsp->flags | RSP_FLAG_RS;
+	
+	// Private key file handling
+	if(rspsink->prop_key_file && strlen(rspsink->prop_key_file)){
+		wordexp_t exp_result;
+		wordexp(rspsink->prop_key_file, &exp_result, 0);
+		FILE *keyFile = fopen(exp_result.we_wordv[0], "r");	// Open the specified private key file
+		wordfree(&exp_result);
+		if(keyFile == NULL){
+			GST_ERROR_OBJECT(rspsink, "Failed to open private key file. Verify settings.");
+			return FALSE;
+		}
+		
+		rspErr = rspSessionSetPrivKeyFile(rspsink->rsp, keyFile, rspsink->prop_key_pw);
+		fclose(keyFile);
+		if(rspErr){
+			GST_ERROR_OBJECT(rspsink, "Private key file is not valid, or password failed if used. Verify settings.");
+			return FALSE;
+		}
+	}
 	
 	if(rspSessionInit(rspsink->rsp) != RSP_ERROR_NONE){
 		GST_ERROR_OBJECT(rspsink, "Failed to initialize RSP session. Verify settings.");

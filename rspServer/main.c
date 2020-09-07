@@ -43,7 +43,7 @@
 #include "rs.h"
 #include "rsp.h"
 
-#define clientID "rspServer/1.5c"
+#define clientID "rspServer/1.6"
 
 #ifdef __APPLE__
 	#define YIELD() pthread_yield_np()
@@ -4677,11 +4677,16 @@ void processCommand(int sd, struct serverContext *cPtr, const char *command)
 			size = snprintf(buf, sizeof buf, "No Sources.\n");
 			write(sd, buf, size);
 		}else{
+			char *tmp;
 			while(cur_s = prev_s->next){ 
 				pthread_mutex_lock(&cur_s->lock); 
 				pthread_mutex_unlock(&prev_s->lock);
 				if(cur_s->sourceName){
-					size = snprintf(buf, sizeof buf, "%s\tWrite=%.3f\tRead=%.3f\n", cur_s->sourceName, cur_s->rsp->avWrPosition, cur_s->rsp->rdPosition);
+					if(cur_s->rsp->interleaver && il_getChecksumValid(cur_s->rsp->interleaver, cur_s->rsp->interleaver->rowBlock))
+						tmp = "Auth";
+					else
+						tmp = "NoAuth";
+					size = snprintf(buf, sizeof buf, "%s\tWrite=%.3f\tRead=%.3f\t%s\n", cur_s->sourceName, cur_s->rsp->avWrPosition, cur_s->rsp->rdPosition, tmp);
 					write(sd, buf, size);
 				}
 				prev_s = cur_s;

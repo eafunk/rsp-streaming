@@ -1314,20 +1314,17 @@ unsigned char rspSessionWritePacket(struct rspSession *session, unsigned int *si
 	if(rsp_err == RSP_ERROR_NONE){
 		if((flags & 0x03) == RSP_FLAG_AUTH){
 			lb = block / session->interleaving;
-			bk_diff = session->rdPosition + kTargetWrRdGap - 0.5;
-			if(bk_diff > 3)
-				bk_diff = bk_diff - 3;
+			bk_diff = session->rdPosition + kTargetWrRdGap; // kTargetWrRdGap typically = +1.5
+			// round up (if at or past midpoint) of down (if below midpoint) of the block
+			bk_diff = round(bk_diff);
+			if(bk_diff >= 3.0)
+				bk_diff = bk_diff - 3.0;
 			if(lb != (unsigned char)bk_diff){
-				bk_diff = session->rdPosition + kTargetWrRdGap + 0.5;
-				if(bk_diff > 3)
-					bk_diff = bk_diff - 3;
-				if(lb != (unsigned char)bk_diff){
-					// Not for a logical block within +/- 0.5 logical blocks of the target write time.
-					// target write location is the current read location + target read/write gap (kTargetWrRdGap).
-					// Early or late beyond the acceptable window: Don't use this packet 
-					session->BadStat = session->BadStat + session->columnScaling;
-					return RSP_ERROR_WINDOW;
-				}
+				// Not for a logical block within rounded block number of the target write time.
+				// target write location is the current read location + target read/write gap (kTargetWrRdGap).
+				// Early or late beyond the acceptable window: Don't use this packet 
+				session->BadStat = session->BadStat + session->columnScaling;
+				return RSP_ERROR_WINDOW;
 			}
 			
 			if(il_getChecksumValid(session->interleaver, block))
