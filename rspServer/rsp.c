@@ -2039,7 +2039,7 @@ void rspSessionCheckStatusTime(struct rspSession *session)
 		// send reciever report
 		
 		// handle cluster
-fprintf(stderr, "relay_cluster=%d, relay=%d, rec=%p\n", session->relay_cluster, session->relay, session->clusterList);
+//fprintf(stderr, "relay_cluster=%d, relay=%d, rec=%p\n", session->relay_cluster, session->relay, session->clusterList);
 
 		if(session->relay_cluster && session->relay && (rec = session->clusterList)){
 			// check for timeouts
