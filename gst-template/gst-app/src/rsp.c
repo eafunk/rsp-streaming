@@ -1034,6 +1034,7 @@ void rspSessionClusterSetup(struct rspSession *session, cJSON *relayCluster)
 						if((portstr = strchr(host, ':')) == NULL)
 							continue;
 						*portstr = 0;
+						portstr++;
 						if((portno = atoi(portstr)) == 0)
 							continue;						
 						// First try the address as numeric format
@@ -1138,7 +1139,6 @@ void rspSessionClusterSetup(struct rspSession *session, cJSON *relayCluster)
 	session->cluster_timeout = 0;
 	if(item = cJSON_GetObjectItem(relayCluster, "Timeout"))
 		session->cluster_timeout = item->valueint;
-	
 	if(session->cluster_timeout){
 		// if cluster_timeout is non-zero, set all last heard times to now
 		if(rec = session->clusterList){
@@ -2038,7 +2038,9 @@ void rspSessionCheckStatusTime(struct rspSession *session)
 	if(session->rrPeriod && (time(NULL) > (session->lastReport + session->rrPeriod))){
 		// send reciever report
 		
-		// handle cluster	
+		// handle cluster
+fprintf(stderr, "relay_cluster=%d, relay=%d, rec=%p\n", session->relay_cluster, session->relay, session->clusterList);
+
 		if(session->relay_cluster && session->relay && (rec = session->clusterList)){
 			// check for timeouts
 			if(session->cluster_timeout){
