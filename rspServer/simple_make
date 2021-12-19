@@ -1,0 +1,1 @@
+cc -g -pthread cJSON.c main.c rs.c rsp.c -lc -lm -lcrypto -o rspServer

@@ -43,7 +43,7 @@
 #include "rs.h"
 #include "rsp.h"
 
-#define clientID "rspServer/1.6"
+#define clientID "rspServer/1.7"
 
 #ifdef __APPLE__
 	#define YIELD() pthread_yield_np()
@@ -87,6 +87,7 @@ struct sourceRecord {
 	unsigned int sc_prerollIdx;
 	unsigned int sc_prerollSize;
 	unsigned int sc_prerollFill;
+	unsigned int sc_kbitrate;
 
 	unsigned short prerollPace;
 	
@@ -612,9 +613,9 @@ unsigned short readConfigFile(FILE * fd, cJSON **root_conf, cJSON **sources, cJS
 	data[len] = 0;
 	fread(data, 1, len, fd);
 	if(*root_conf = cJSON_Parse(data)){
-		*reports_conf = cJSON_GetObjectItem(*root_conf, "reports");		
+		*reports_conf = cJSON_GetObjectItem(*root_conf, "reports");
 		// look for rsp relay source settings
-		if(*relay_conf = cJSON_GetObjectItem(*root_conf, "relay")){		
+		if(*relay_conf = cJSON_GetObjectItem(*root_conf, "relay")){
 			if(*sources = cJSON_GetObjectItem(*relay_conf, "sources"))
 				count = cJSON_GetArraySize(*sources);
 		}
@@ -662,7 +663,7 @@ void recodeRelaySetup(struct sourceRecord *sPtr, cJSON *recode)
 			if(keyFile == NULL)
 				goto fail;
 			rspErr = rspSessionSetPrivKeyFile(recodeSession, keyFile, "");	
-			fclose(keyFile);										
+			fclose(keyFile);
 			if(rspErr)
 				goto fail;
 		}
@@ -1436,7 +1437,7 @@ void rspReformatRelayData(struct serverContext *cPtr, struct sourceRecord *sPtr,
 			if(*metaStr == NULL){
 				// check to see if there is new metadata to start adding to frames
 				if(*metaStr = rspSessionNextMetaStr(sPtr->recode_rsp))
-					*metaPos = 0;						 
+					*metaPos = 0;
 			}
 			
 			// set next metadataByte, if any
@@ -1993,7 +1994,7 @@ void removeStaticListener(cJSON *listener, struct serverContext *cPtr, struct li
 	}
 	
 	if(item = cJSON_GetObjectItem(listener, "Port"))
-		portNo = item->valueint;						
+		portNo = item->valueint;
 	if(portNo && (item = cJSON_GetObjectItem(listener, "Address"))){
 		if((item->valuestring == NULL) || (strlen(item->valuestring) == 0))
 			portNo = 0;
@@ -2453,7 +2454,7 @@ struct sourceRecord *initSourceNode(struct sourceRecord *rec, struct serverConte
 					if(!transcoderExecute(rec, item)){
 						fprintf(stderr, "Failed to setup RSP re-encoding for source [%s].\n", rec->sourceName);
 						syslog(LOG_WARNING, "Failed to setup RSP re-encoding for source [%s].", rec->sourceName);
-						goto fail; 						
+						goto fail;
 					}
 				}
 			}
@@ -2596,7 +2597,7 @@ void *reportTask(void* refCon)
 					
 					rec = NULL;
 					if((item = cJSON_GetObjectItem(rr.meta, "Stream")) && item->valuestring && strlen(item->valuestring))
-						rec = getSourceByName(item->valuestring, cPtr->sourceList);					
+						rec = getSourceByName(item->valuestring, cPtr->sourceList);
 					if(rec)
 						head = rec->listHead;	// matching source 
 					else 
@@ -2692,6 +2693,49 @@ void *reportTask(void* refCon)
 		checkListenerTimeout(cPtr, cPtr->listHead, NULL);
 	}
 	pthread_exit(0);
+}
+
+char *stat_content(char *stream_name, struct sourceRecord *head)
+{
+	char *out, *str;
+	char buffer[64];
+	struct sourceRecord *rec;
+	cJSON *item, *obj;
+	
+	if(stream_name == NULL)
+		return NULL;
+	
+	out = NULL;
+	if(rec = getSourceByName(stream_name, head)){
+		// associated stream does exist
+		appendstr(&out, "<html>\r\n<head>\r\n\r\n<meta http-equiv=\"Pragma\" content=\"no-cache\">\r\n</head>\r\n<body>");
+		snprintf(buffer, sizeof buffer, "%i,%i,%i,%i,%i,%i,",
+									(unsigned int)rec->listener_count, 
+									(rec->sourceStatus ? 1 : 0),
+									rec->listener_peak,
+									rec->relay_limit,
+									(unsigned int)rec->listener_count,
+									rec->sc_kbitrate);
+		appendstr(&out, buffer);
+		pthread_mutex_lock(&rec->trackLock);
+		if(item = cJSON_GetArrayItem(rec->trackList, cJSON_GetArraySize(rec->trackList)-1)){
+			if(obj = cJSON_GetObjectItem(item, "Artist")){
+				str = obj->valuestring;
+				if(str)
+					appendstr(&out, str);
+				appendstr(&out, " - ");
+				if(obj = cJSON_GetObjectItem(item, "Name")){
+					str = obj->valuestring;
+					if(str)
+						appendstr(&out, str);
+				}
+			}
+		}
+		pthread_mutex_unlock(&rec->trackLock);
+		pthread_mutex_unlock(&rec->lock); 
+		appendstr(&out, "</body>\r\n</html>");
+	}
+	return out;
 }
 
 char *pls_content(int sock, char *stream_name, struct sourceRecord *head)
@@ -2821,7 +2865,7 @@ char *listen_content(int sock, struct sourceRecord *head)
 	pthread_mutex_unlock(&prev_s->lock);
 	appendstr(&out, "<HR>");
 	appendstr(&out, clientID);
-	appendstr(&out, " &#169 Ethan Funk 2012-2020<HR></center>\n</body>\n</html>\n");
+	appendstr(&out, " &#169 Ethan Funk 2012-2021<HR></center>\n</body>\n</html>\n");
 	return out;
 }
 
@@ -2949,7 +2993,7 @@ void *shoutcastSession(void* refCon)
 							agent = value + 1;
 							agent = strtok_r(agent, " \t", &value);
 						}else if(strcasecmp(key, "icy-metadata") == 0)
-							metaFlag = atoi(value);				
+							metaFlag = atoi(value);
 					}
 					// we don't care about other header fields, so we just ignore them
 				}
@@ -2987,6 +3031,26 @@ void *shoutcastSession(void* refCon)
 				}
 			}
 			
+			// strip anything after '?' This is needed to deal with radio.garden client
+			strtok_r(uri, "?", &value);
+			
+			value = strstr(uri, "/7.html");
+			if(value){
+				//shoutcast type stats and track request
+				*value = 0; // strip /7.html, leaving source
+				if((strlen(uri) > 1) && (content = stat_content(uri+1, cPtr->sourceList))){
+					sendHttpContent(sock, "text/html", content);
+					free(content);
+					free(in);
+					free(uri);
+					close(sock);
+					pthread_exit(0);
+				}else{
+					errMsg = "404 Not Found";
+					goto fail;
+				}
+			}
+			
 			// strip possible file sufix '.' and check for pls sufix
 			strtok_r(uri, ".", &value);
 			if(value && (strcasecmp(value, "pls") == 0)){
@@ -3010,7 +3074,7 @@ void *shoutcastSession(void* refCon)
 				goto fail;
 			}
 
-			// create listener node						
+			// create listener node
 			if((data = cJSON_CreateObject()) && (ipGrp = cJSON_CreateObject()) && (rep = cJSON_CreateObject())){
 				if(agent)
 					cJSON_AddStringToObject(data, "Client", agent);
@@ -3087,7 +3151,7 @@ void *shoutcastSession(void* refCon)
 				appendstr(&out, "<BR>\r\n");
 				appendstr(&out, "icy-name:");
 				appendstr(&out, rec->sourceName);
-				appendstr(&out, "\r\n");						
+				appendstr(&out, "\r\n");
 				
 				if(item = cJSON_GetObjectItem(rec->sc_conf, "public")){
 					if(item->valueint)
@@ -3128,13 +3192,14 @@ void *shoutcastSession(void* refCon)
 						}
 					}
 					if(item = cJSON_GetObjectItem(group, "kBitRate")){
+						rec->sc_kbitrate = item->valueint;
 						if(item->valueint > 0){
 							snprintf(buffer, sizeof(buffer), "icy-br:%u\r\n", item->valueint);
 							appendstr(&out, buffer);
 						}else{
 							errMsg = "500e Internal Server Error";
 							goto fail;
-						}					
+						}
 					}
 				}else{
 					pthread_mutex_lock(&(rec->rsp->metaMutex));
@@ -3154,6 +3219,7 @@ void *shoutcastSession(void* refCon)
 							}
 						}
 						if(item = cJSON_GetObjectItem(group, "kBitRate")){
+							rec->sc_kbitrate = item->valueint;
 							if(item->valueint > 0){
 								snprintf(buffer, sizeof(buffer), "icy-br:%u\r\n", item->valueint);
 								appendstr(&out, buffer);
@@ -3161,7 +3227,7 @@ void *shoutcastSession(void* refCon)
 								pthread_mutex_unlock(&(rec->rsp->metaMutex));
 								errMsg = "500g Internal Server Error";
 								goto fail;
-							}					
+							}
 						}
 						pthread_mutex_unlock(&(rec->rsp->metaMutex));
 					}else{
@@ -4304,14 +4370,14 @@ void processCommand(int sd, struct serverContext *cPtr, const char *command)
 			if(data_str = cJSON_Print(sPtr->trackList)){
 				pthread_mutex_unlock(&sPtr->trackLock);
 				size = strlen(data_str);
-				write(sd, data_str, size);			
+				write(sd, data_str, size);
 				data_str[0] = '\n';
-				write(sd, data_str, 1);			
+				write(sd, data_str, 1);
 				free(data_str);
 			}else{
 				pthread_mutex_unlock(&sPtr->trackLock);
 				size = snprintf(buf, sizeof buf, "No track data available.\n");
-				write(sd, buf, size);							
+				write(sd, buf, size);
 			}
 			pthread_mutex_unlock(&sPtr->lock);
 		}
