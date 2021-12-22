@@ -2708,7 +2708,7 @@ char *stat_content(char *stream_name, struct sourceRecord *head)
 	out = NULL;
 	if(rec = getSourceByName(stream_name, head)){
 		// associated stream does exist
-		appendstr(&out, "<html>\r\n<head>\r\n\r\n<meta http-equiv=\"Pragma\" content=\"no-cache\">\r\n</head>\r\n<body>");
+		appendstr(&out, "<html><head><meta http-equiv=\"Pragma\" content=\"no-cache\"></head><body>");
 		snprintf(buffer, sizeof buffer, "%i,%i,%i,%i,%i,%i,",
 									(unsigned int)rec->listener_count, 
 									(rec->sourceStatus ? 1 : 0),
