@@ -43,13 +43,13 @@
 #include "rs.h"
 #include "rsp.h"
 
-#define clientID "rspServer/1.7"
+#define clientID "rspServer/1.8"
 
 #ifdef __APPLE__
 	#define YIELD() pthread_yield_np()
 	#include <malloc/malloc.h>
 #else
-	#define YIELD() pthread_yield()
+	#define YIELD() sched_yield()
 #endif
 
 struct listenerNode {
@@ -842,7 +842,7 @@ fail:
 	return -1;
 }
 
-unsigned char checkForClustering(struct recvrRecord	*rr, unsigned char *packet, unsigned char *colNumber)
+unsigned char checkForClustering(struct recvrRecord *rr, unsigned char *packet, unsigned char *colNumber)
 {
 	// first time a packet is processed, colNumber = 0xff so we know to calculate the column number from the packet
 	// and not have to do it again on subsequent use of the same packet
@@ -2983,7 +2983,7 @@ void *shoutcastSession(void* refCon)
 		savePtr = in;
 		while(line = strtok_r(NULL, "\r\n", &savePtr)){
 			if(strlen(line)){
-				if(strstr(in, "GET /") == line){
+				if(strstr(in, "GET ") == line){
 					// we have a GET request, extract URI and HTTP version
 					strtok_r(line, " ", &httpv);
 					raw_uri = strtok_r(NULL, " ", &httpv);
@@ -3268,7 +3268,7 @@ void *shoutcastSession(void* refCon)
 
 				// the next line allows the relay thread to start sending stream data, now that the response has been sent
 				node->socket = sock;
-											
+				
 				free(in);
 				if(uri)
 					free(uri);
