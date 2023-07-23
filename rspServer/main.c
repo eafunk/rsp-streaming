@@ -2926,12 +2926,12 @@ void *shoutcastSession(void* refCon)
 	int to_sec;
 	char buffer[256];
 	char *in, *out, *line, *savePtr;
-	int nbytes;	
+	int nbytes;
 	char *str;
 	char *errMsg;
 	char *httpv;
 	char *agent;
-	char *uri, *raw_uri;
+	char *uri, *raw_uri, *full_uri;
 	char *key;
 	char *value;
 	char *content;
@@ -3001,6 +3001,15 @@ void *shoutcastSession(void* refCon)
 		}
 		if(raw_uri && httpv && ((strcasecmp(httpv, "HTTP/1.1") == 0) || (strcasecmp(httpv, "HTTP/1.0") == 0)) ){
 			// uri, if not NULL after this call, needs to be freed when your done with it.
+			full_uri = strstr(raw_uri, "://");
+			if(full_uri){
+				// handle full URL (i.e. HTTP://server.com/path), strip string to /path
+				raw_uri = strchr(full_uri+3, '/');
+				if(!raw_uri){
+					errMsg = "404 Not Found";
+					goto fail;
+				}
+			}
 			uri = decodeURI(raw_uri);
 			if((strcmp(uri, "/streamlist") == 0) || (strcmp(uri, "/") == 0)){
 				pthread_mutex_lock(&cPtr->lock);
@@ -3103,7 +3112,7 @@ void *shoutcastSession(void* refCon)
 					else{
 						errMsg = "500b Internal Server Error";
 						goto fail;
-					}						
+					}
 					cJSON_AddNumberToObject(ipGrp, "Port", htons(addr.sin6_port));
 					cJSON_AddFalseToObject(ipGrp, "Relay");
 					if(cPtr->sc_identity)
